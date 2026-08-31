@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VexForge — Digital Product & Automation Studio</title>
+<meta name="description" content="VexForge builds custom websites, automations and AI solutions for startups, fintech teams and growing businesses. Delhi, India.">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap');
+
+:root{
+  --iron:#13161d; --iron-2:#0d1015; --steel:#1b212c; --steel-2:#232b38;
+  --line:#2b3442; --line-soft:#222a35;
+  --paper:#ecedf1; --paper-2:#e2e4ea; --paper-line:#d3d7df;
+  --ink:#11141b; --ink-soft:#3f4655; --ink-3:#6a7383;
+  --snow:#eef1f5; --fog:#a7b2c2; --fog-2:#6d7a8c;
+  --m1:#ffb865; --m2:#ff7a2e; --m3:#ef4f26;
+  --molten:linear-gradient(102deg,#ffc178 0%,#ff8a3d 45%,#ef4f26 100%);
+  --radius:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--iron);color:var(--snow);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+.wrap{max-width:1080px;margin:0 auto;padding:0 26px}
+.grad{background:var(--molten);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+.top{border-bottom:1px solid var(--line-soft);background:rgba(13,16,21,.72);backdrop-filter:blur(8px);position:sticky;top:0;z-index:50}
+.top-in{display:flex;align-items:center;justify-content:space-between;padding:16px 0}
+.brand{display:flex;align-items:center;gap:11px;text-decoration:none}
+.brand .mark{width:30px;height:30px;flex-shrink:0}
+.brand .name{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;letter-spacing:-.01em;color:var(--snow)}
+.top-meta{display:flex;align-items:center;gap:20px}
+.top-loc{font-family:'Space Mono',monospace;font-size:11.5px;letter-spacing:.06em;color:var(--fog-2);text-transform:uppercase;display:none}
+.btn{display:inline-block;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;text-decoration:none;border-radius:9px;transition:transform .18s ease,box-shadow .18s ease;cursor:pointer;border:none}
+.btn-molten{background:var(--molten);color:#1a0d05;padding:10px 18px;box-shadow:0 6px 20px -8px rgba(239,79,38,.7)}
+.btn-molten:hover{transform:translateY(-2px);box-shadow:0 10px 26px -8px rgba(239,79,38,.85)}
+.btn-ghost{border:1px solid var(--line);color:var(--snow);padding:10px 18px;background:transparent}
+.btn-ghost:hover{border-color:var(--m2);color:#ffd9ba;transform:translateY(-2px)}
+.btn-lg{padding:13px 24px;font-size:15px}
+
+.hero{position:relative;padding:82px 0 64px;overflow:hidden}
+.hero-grid{position:absolute;inset:0;z-index:0;opacity:.5;background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);background-size:46px 46px;-webkit-mask-image:radial-gradient(ellipse 80% 62% at 50% 34%,#000 0%,transparent 78%);mask-image:radial-gradient(ellipse 80% 62% at 50% 34%,#000 0%,transparent 78%)}
+.hero-glow{position:absolute;top:-90px;left:50%;transform:translateX(-50%);width:640px;height:420px;z-index:0;pointer-events:none;background:radial-gradient(ellipse at center,rgba(255,122,46,.28),rgba(239,79,38,.10) 42%,transparent 70%);filter:blur(14px)}
+.hero-in{position:relative;z-index:1;max-width:760px}
+.eyebrow{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--m1);display:inline-flex;align-items:center;gap:9px;margin-bottom:22px}
+.eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--m2);box-shadow:0 0 10px 1px var(--m2)}
+h1{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-.025em;line-height:1.05;font-size:clamp(34px,6vw,58px);margin-bottom:20px}
+.lead{font-size:clamp(15px,2.2vw,18px);color:var(--fog);max-width:600px;margin-bottom:30px}
+.lead b{color:var(--snow);font-weight:600}
+.hero-cta{display:flex;gap:12px;flex-wrap:wrap}
+.seam{height:2px;margin:52px 0 0;border-radius:2px;position:relative;z-index:1;background:linear-gradient(90deg,transparent,#ff7a2e 22%,#ffc178 50%,#ff7a2e 78%,transparent);box-shadow:0 0 22px 1px rgba(255,122,46,.45)}
+.strip{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:10px 30px;padding-top:26px}
+.strip-item{display:flex;align-items:center;gap:9px;font-family:'Space Mono',monospace;font-size:12.5px;letter-spacing:.03em;color:var(--fog)}
+.strip-item span{width:5px;height:5px;border-radius:50%;background:var(--m2);flex-shrink:0}
+
+.sec{padding:76px 0;position:relative}
+.sec-head{margin-bottom:42px;max-width:660px}
+.sec-code{font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--fog-2);display:block;margin-bottom:12px}
+.sec-code b{color:var(--m2)}
+.sec-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(26px,4vw,38px);letter-spacing:-.02em;line-height:1.12}
+.sec-sub{color:var(--fog);margin-top:12px;font-size:15.5px}
+
+.svc-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.svc{background:var(--steel);border:1px solid var(--line-soft);border-radius:var(--radius);padding:26px 24px;transition:transform .2s ease,border-color .2s ease,background .2s ease;position:relative;overflow:hidden}
+.svc::before{content:"";position:absolute;left:0;top:0;height:100%;width:3px;background:var(--molten);opacity:0;transition:opacity .2s ease}
+.svc:hover{transform:translateY(-4px);border-color:var(--line);background:var(--steel-2)}
+.svc:hover::before{opacity:1}
+.svc-tag{font-family:'Space Mono',monospace;font-size:11.5px;letter-spacing:.14em;color:var(--m1);text-transform:uppercase}
+.svc h3{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:21px;letter-spacing:-.01em;margin:8px 0 14px}
+.svc ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+.svc li{display:flex;gap:10px;font-size:14px;color:var(--fog);line-height:1.5}
+.svc li::before{content:"";width:5px;height:5px;border-radius:1px;background:var(--m2);margin-top:8px;flex-shrink:0;transform:rotate(45deg)}
+.svc li b{color:var(--snow);font-weight:500}
+
+.light{background:var(--paper);color:var(--ink)}
+.light .sec-code{color:#8b93a1}
+.light .sec-code b{color:var(--m3)}
+.light .sec-title{color:var(--ink)}
+.light .sec-sub{color:var(--ink-soft)}
+
+.proj-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.proj{background:#fff;border:1px solid var(--paper-line);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column;transition:transform .2s ease,box-shadow .2s ease}
+.proj:hover{transform:translateY(-4px);box-shadow:0 18px 40px -22px rgba(20,20,30,.4)}
+.proj-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px}
+.pill{font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;padding:4px 9px;border-radius:20px;font-weight:700}
+.pill-live{background:#e6f7ee;color:#14804a;border:1px solid #bfe9d2}
+.pill-prod{background:#fff1e6;color:#c1521f;border:1px solid #f4d3ba}
+.pill-dev{background:#eef0fb;color:#3f4a8a;border:1px solid #ccd3ef}
+.proj-no{font-family:'Space Mono',monospace;font-size:12px;color:#aeb4c0}
+.proj h3{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.01em;color:var(--ink);margin-bottom:4px}
+.proj-kind{font-family:'Space Mono',monospace;font-size:12px;color:var(--m3);margin-bottom:12px}
+.proj p{font-size:14px;color:var(--ink-soft);line-height:1.55;flex-grow:1}
+.proj p b{color:var(--ink);font-weight:600}
+.proj-stack{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0}
+.proj-stack span{font-family:'Space Mono',monospace;font-size:11px;color:#4b5261;background:var(--paper-2);border:1px solid var(--paper-line);border-radius:6px;padding:3px 8px}
+.proj-link{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13.5px;text-decoration:none;color:var(--ink);display:inline-flex;align-items:center;gap:7px;align-self:flex-start;border-bottom:2px solid var(--m2);padding-bottom:2px;transition:gap .18s ease,color .18s ease}
+.proj-link:hover{gap:11px;color:var(--m3)}
+.no-link{color:#9aa1ad;font-size:13.5px}
+.proj-use{margin-top:14px;padding-top:12px;border-top:1px solid var(--paper-line);font-size:13px;color:var(--ink-3);line-height:1.45}
+.proj-use b{color:var(--m3);font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:3px}
+
+.stack-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.srow .h{font-family:'Space Mono',monospace;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--m1);margin-bottom:12px}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{font-size:13px;color:var(--snow);background:var(--steel);border:1px solid var(--line);border-radius:7px;padding:5px 11px;font-weight:500}
+
+.team-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.member{background:var(--steel);border:1px solid var(--line-soft);border-radius:var(--radius);padding:26px 24px}
+.member-top{display:flex;align-items:center;gap:15px;margin-bottom:16px}
+.avatar{width:52px;height:52px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;color:#1a0d05;background:var(--molten)}
+.member h3{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;letter-spacing:-.01em}
+.member .role{font-family:'Space Mono',monospace;font-size:12px;color:var(--fog-2)}
+.member p{font-size:14px;color:var(--fog);line-height:1.6}
+.member .facts{display:flex;flex-wrap:wrap;gap:7px;margin-top:15px}
+.member .facts span{font-family:'Space Mono',monospace;font-size:11px;color:var(--m1);border:1px solid var(--line);border-radius:6px;padding:3px 8px}
+.creds{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:26px;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);padding:22px 0}
+.cred{display:flex;align-items:center;gap:14px}
+.cred .cn{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.02em;white-space:nowrap}
+.cred div{font-size:13px;color:var(--fog-2);line-height:1.4}
+.cred div b{color:var(--snow);font-weight:600;font-size:14px;display:block}
+
+.price{background:var(--steel);border:1px solid var(--line);border-radius:18px;padding:38px 34px;position:relative;overflow:hidden}
+.price::after{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(255,122,46,.18),transparent 66%)}
+.price .sec-code{margin-bottom:14px}
+.price h3{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(22px,3.4vw,30px);letter-spacing:-.02em;line-height:1.2;max-width:640px;position:relative;z-index:1}
+.price p{color:var(--fog);margin-top:14px;max-width:600px;font-size:15px;position:relative;z-index:1}
+
+.contact{background:var(--iron-2)}
+.contact-in{text-align:center;max-width:720px;margin:0 auto}
+.contact h2{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(28px,5vw,44px);letter-spacing:-.025em;line-height:1.08;margin-bottom:16px}
+.contact .lead{margin:0 auto 30px;color:var(--fog)}
+.wa{margin-bottom:38px}
+.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;text-align:left}
+.ccard{background:var(--steel);border:1px solid var(--line-soft);border-radius:var(--radius);padding:22px 24px}
+.ccard .who{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:17px;margin-bottom:2px}
+.ccard .what{font-family:'Space Mono',monospace;font-size:11.5px;color:var(--m1);letter-spacing:.04em;margin-bottom:14px}
+.ccard a{display:flex;align-items:center;gap:10px;color:var(--fog);text-decoration:none;font-size:14px;padding:5px 0;transition:color .16s ease}
+.ccard a:hover{color:#ffd9ba}
+.ccard a .ic{width:15px;text-align:center;color:var(--fog-2);flex-shrink:0}
+.social{display:flex;justify-content:center;gap:22px;margin-top:32px;flex-wrap:wrap}
+.social a{font-family:'Space Mono',monospace;font-size:12.5px;color:var(--fog);text-decoration:none;transition:color .16s ease}
+.social a:hover{color:var(--m1)}
+
+.contact-form{background:var(--steel);border:1px solid var(--line-soft);border-radius:var(--radius);padding:26px 24px;text-align:left;margin-bottom:38px}
+.contact-form h3{font-family:'Space Grotesk',sans-serif;font-size:18px;margin-bottom:4px}
+.contact-form p{font-size:13.5px;color:var(--fog);margin-bottom:18px}
+.contact-form .row{display:flex;gap:12px;flex-wrap:wrap}
+.contact-form .field{flex:1;min-width:200px;display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.contact-form label{font-size:12.5px;color:var(--fog)}
+.contact-form input,.contact-form textarea{background:var(--iron-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--snow);font-family:inherit;font-size:14px}
+.contact-form textarea{min-height:90px;resize:vertical}
+.contact-form input:focus,.contact-form textarea:focus{outline:none;border-color:var(--m2)}
+.form-status{font-size:13.5px;margin-top:12px}
+.form-status.ok{color:#3fb87f}
+.form-status.err{color:#ff6b6b}
+
+.foot{border-top:1px solid var(--line-soft);padding:30px 0}
+.foot-in{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.foot-brand{display:flex;align-items:center;gap:10px}
+.foot-brand .name{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px}
+.foot p{font-family:'Space Mono',monospace;font-size:11.5px;color:var(--fog-2);letter-spacing:.03em}
+
+@media(min-width:520px){.top-loc{display:block}}
+@media(max-width:900px){.stack-grid,.creds{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:760px){
+  .svc-grid,.proj-grid,.team-grid,.cards,.stack-grid,.creds{grid-template-columns:1fr}
+  .sec{padding:58px 0}.hero{padding:60px 0 50px}
+  .top-meta .btn{padding:9px 15px;font-size:13px}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}
+@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.top{position:static}.sec{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap top-in">
+    <a href="#top" class="brand">
+      <svg class="mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs><linearGradient id="mg" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#ffc178"/><stop offset="0.5" stop-color="#ff8a3d"/><stop offset="1" stop-color="#ef4f26"/></linearGradient></defs>
+        <path d="M7 8 L20 30 L33 8" stroke="url(#mg)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M20 4 L23.2 9.5 L20 15 L16.8 9.5 Z" fill="url(#mg)"/>
+      </svg>
+      <span class="name">Vex<span class="grad">Forge</span></span>
+    </a>
+    <div class="top-meta">
+      <span class="top-loc">Delhi · India</span>
+      <a href="https://wa.me/918130483894" class="btn btn-molten">Book a call</a>
+    </div>
+  </div>
+</header>
+
+<section class="hero" id="top">
+  <div class="hero-grid"></div><div class="hero-glow"></div>
+  <div class="wrap">
+    <div class="hero-in">
+      <span class="eyebrow"><span class="dot"></span>Digital product &amp; automation studio</span>
+      <h1>We forge the <span class="grad">websites</span> and <span class="grad">automations</span> your business runs on.</h1>
+      <p class="lead">VexForge is a build studio for startups, fintech teams and growing businesses. We ship <b>fast, custom websites</b> and <b>automate the busywork</b> — from Instagram DMs to auto-transcribed sales calls — so your team can focus on the work that matters.</p>
+      <div class="hero-cta">
+        <a href="https://wa.me/918130483894" class="btn btn-molten btn-lg">WhatsApp us</a>
+        <a href="#work" class="btn btn-ghost btn-lg">See live builds</a>
+      </div>
+    </div>
+    <div class="seam"></div>
+    <div class="strip">
+      <div class="strip-item"><span></span>2 products in production</div>
+      <div class="strip-item"><span></span>Live &amp; serving real users today</div>
+      <div class="strip-item"><span></span>MERN · WordPress · any stack</div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="services">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-code"><b>//</b> What we forge</span>
+      <h2 class="sec-title">Everything from a landing page to a fully automated pipeline.</h2>
+      <p class="sec-sub">Pick one service or bundle them — every build is scoped to what your business actually needs.</p>
+    </div>
+    <div class="svc-grid">
+      <div class="svc">
+        <span class="svc-tag">Web · 01</span><h3>Website &amp; App Development</h3>
+        <ul>
+          <li><b>Full-stack web apps</b> in the MERN stack — MongoDB, Express, React, Node</li>
+          <li><b>Business sites &amp; landing pages</b> that load fast and convert</li>
+          <li><b>WordPress</b> builds, custom themes and plugins</li>
+          <li><b>E-commerce</b> storefronts with payment integration</li>
+          <li><b>Dashboards, portals &amp; internal tools</b> with role-based access</li>
+          <li>Any stack you need — <b>Next.js, PostgreSQL and more</b></li>
+        </ul>
+      </div>
+      <div class="svc">
+        <span class="svc-tag">Auto · 02</span><h3>Automation Solutions</h3>
+        <ul>
+          <li><b>Social media:</b> Instagram DM &amp; comment bots, Facebook Messenger, YouTube uploads, WhatsApp Business, LinkedIn outreach</li>
+          <li><b>Email:</b> cold outreach, drip campaigns, auto-responders, newsletters</li>
+          <li><b>Calls:</b> auto transcription, summaries and call logging</li>
+          <li><b>Workflow:</b> connect your apps with n8n, Zapier and Make</li>
+          <li><b>Lead-gen &amp; CRM:</b> lead capture, auto follow-ups, pipeline sync</li>
+          <li><b>Data:</b> web scraping, data entry, scheduled reports</li>
+        </ul>
+      </div>
+      <div class="svc">
+        <span class="svc-tag">AI · 03</span><h3>AI Solutions</h3>
+        <ul>
+          <li><b>AI chatbots</b> and support assistants that answer from your own documents</li>
+          <li><b>Smart search</b> and recommendation systems</li>
+          <li><b>LLM integration</b> and fine-tuning for your use case</li>
+          <li><b>Document &amp; content automation</b> — summaries, transcription, drafting</li>
+        </ul>
+      </div>
+      <div class="svc">
+        <span class="svc-tag">Care · 04</span><h3>Support &amp; Maintenance</h3>
+        <ul>
+          <li><b>Ongoing upkeep</b> — bug fixes, updates and new features</li>
+          <li><b>Deployment &amp; hosting</b> setup and performance tuning</li>
+          <li><b>Third-party integrations</b> and general tech support</li>
+          <li>One point of contact whenever something needs attention</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec light" id="work">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-code"><b>//</b> Live builds</span>
+      <h2 class="sec-title">Products we've shipped that are live and serving users right now.</h2>
+      <p class="sec-sub">Not mockups — real applications running in production, built end to end.</p>
+    </div>
+    <div class="proj-grid">
+      <div class="proj">
+        <div class="proj-top"><span class="pill pill-live">● Live</span><span class="proj-no">01</span></div>
+        <h3>WeCode</h3><div class="proj-kind">Coding practice platform</div>
+        <p>An online coding platform built for our college — students attempt problems and submit solutions directly in the browser. Built full-stack and deployed to a live, always-on environment.</p>
+        <div class="proj-stack"><span>React</span><span>Node.js</span><span>Full-stack</span><span>Render</span></div>
+        <a class="proj-link" href="https://wecode-coders.onrender.com/" target="_blank" rel="noopener">Visit WeCode &rarr;</a>
+      </div>
+      <div class="proj">
+        <div class="proj-top"><span class="pill pill-live">● Live</span><span class="proj-no">02</span></div>
+        <h3>GgnHome</h3><div class="proj-kind">Property discovery platform</div>
+        <p>A real-estate platform built around "Get Space &amp; Get Rewarded" — personalised property recommendations, AI-powered search, easy visit scheduling and a rewards programme for registered users.</p>
+        <div class="proj-stack"><span>React</span><span>AI search</span><span>Recommendations</span><span>Scheduling</span></div>
+        <a class="proj-link" href="https://www.ggnhome.com/" target="_blank" rel="noopener">Visit GgnHome &rarr;</a>
+      </div>
+      <div class="proj">
+        <div class="proj-top"><span class="pill pill-prod">● In production</span><span class="proj-no">03</span></div>
+        <h3>GgnHome · Call Automation</h3><div class="proj-kind">Voice-to-text automation</div>
+        <p>An automation layer for GgnHome that <b>auto-transcribes incoming calls</b> and captures the details — so no lead or conversation is ever lost, and the team gets clean, searchable records without any manual note-taking.</p>
+        <div class="proj-stack"><span>Speech-to-text</span><span>Automation</span><span>Call logging</span></div>
+        <span class="no-link">Case study on request</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec light" id="engineering" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head" style="margin-top:20px;border-top:1px solid var(--paper-line);padding-top:56px">
+      <span class="sec-code"><b>//</b> Engineering depth</span>
+      <h2 class="sec-title">The systems work behind the services.</h2>
+      <p class="sec-sub">Alongside client projects we build and research the harder pieces — AI models, automation integrations and control systems. This is the engineering our services are built on.</p>
+    </div>
+    <div class="proj-grid">
+      <div class="proj">
+        <div class="proj-top"><span class="proj-kind" style="margin:0">AI · Recommendation engine</span></div>
+        <h3>Hybrid Recommender System</h3>
+        <p>A full recommendation pipeline combining collaborative filtering, graph-based and sequential models — LightGCN, SASRec, NeuMF, BPR and EASE. Includes <b>LoRA fine-tuning on a Gemma LLM</b> and a LightGBM LambdaRank meta-learner tuned with Optuna, reaching <b>HR@10 of 0.797</b> on the MovieLens-1M dataset, plus a dashboard for ranking and diversity analysis.</p>
+        <div class="proj-stack"><span>PyTorch</span><span>Transformers</span><span>LoRA</span><span>LightGBM</span><span>Optuna</span></div>
+        <div class="proj-use"><b>Powers</b>Our recommendation engines, smart search and personalisation work.</div>
+      </div>
+      <div class="proj">
+        <div class="proj-top"><span class="proj-kind" style="margin:0">Social automation · Meta Graph API</span><span class="pill pill-dev">In development</span></div>
+        <h3>Instagram DM Automation</h3>
+        <p>A bot that automates Instagram DM conversations end to end — <b>automated replies, rich carousel message templates and emoji support</b>, built on the Meta Instagram Graph API with OAuth-based token management for secure, long-running access.</p>
+        <div class="proj-stack"><span>Node.js</span><span>Express</span><span>Meta Graph API</span><span>OAuth</span></div>
+        <div class="proj-use"><b>Powers</b>Our Instagram, Messenger and WhatsApp automation offering.</div>
+      </div>
+      <div class="proj">
+        <div class="proj-top"><span class="proj-kind" style="margin:0">Role-based portal · Backend</span></div>
+        <h3>CampusHub</h3>
+        <p>A student portal with <b>four role-based dashboards</b> — Admin, Professor, Student and TA — covering course registration, prerequisite-gated enrollment, grading, GPA tracking, complaints and feedback. Modular backend architecture with persistent data management and access control.</p>
+        <div class="proj-stack"><span>Java</span><span>OOP</span><span>PostgreSQL</span></div>
+        <div class="proj-use"><b>Powers</b>Our dashboards, admin panels and role-based internal tools.</div>
+      </div>
+      <div class="proj">
+        <div class="proj-top"><span class="proj-kind" style="margin:0">Advanced Robotics Lab · IIIT Delhi</span></div>
+        <h3>Multi-Robot Control Research</h3>
+        <p>Ongoing research into <b>decentralized collision avoidance for multi-robot swarms</b> using Control Barrier Functions — real-time trajectory optimization, a scalable local-sensing architecture that cuts central compute overhead, validated across large-scale simulations.</p>
+        <div class="proj-stack"><span>Python</span><span>Control Systems</span><span>Optimization</span></div>
+        <div class="proj-use"><b>Brings</b>Serious optimization and algorithms depth to hard technical problems.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="stack">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-code"><b>//</b> The workshop</span><h2 class="sec-title">The tools we build with.</h2></div>
+    <div class="stack-grid">
+      <div class="srow"><div class="h">Languages</div><div class="chips"><span class="chip">Python</span><span class="chip">JavaScript</span><span class="chip">Java</span><span class="chip">C++</span><span class="chip">SQL</span></div></div>
+      <div class="srow"><div class="h">Frontend</div><div class="chips"><span class="chip">React</span><span class="chip">Next.js</span><span class="chip">HTML / CSS</span><span class="chip">Tailwind</span><span class="chip">WordPress</span></div></div>
+      <div class="srow"><div class="h">Backend &amp; Databases</div><div class="chips"><span class="chip">Node.js</span><span class="chip">Express</span><span class="chip">FastAPI</span><span class="chip">MongoDB</span><span class="chip">PostgreSQL</span><span class="chip">MySQL</span></div></div>
+      <div class="srow"><div class="h">AI &amp; Machine Learning</div><div class="chips"><span class="chip">PyTorch</span><span class="chip">Transformers</span><span class="chip">LightGBM</span><span class="chip">LoRA fine-tuning</span><span class="chip">LLMs / RAG</span><span class="chip">Gradio</span></div></div>
+      <div class="srow"><div class="h">Automation</div><div class="chips"><span class="chip">n8n</span><span class="chip">Zapier</span><span class="chip">Make</span><span class="chip">Meta Graph API</span><span class="chip">Web scraping</span><span class="chip">Speech-to-text</span></div></div>
+      <div class="srow"><div class="h">Tools &amp; Platforms</div><div class="chips"><span class="chip">Git</span><span class="chip">Docker</span><span class="chip">Linux / Unix</span><span class="chip">Render</span><span class="chip">Jupyter</span></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="team">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="sec-code"><b>//</b> The team</span>
+      <h2 class="sec-title">Two builders. A direct line, no middlemen.</h2>
+      <p class="sec-sub">You work with the people writing the code — that's why we move fast.</p>
+    </div>
+    <div class="team-grid">
+      <div class="member">
+        <div class="member-top"><div class="avatar">T</div><div><h3>Tanush</h3><div class="role">Full-stack &amp; Automation · Co-founder</div></div></div>
+        <p>Builds web applications end to end — from MERN and WordPress front-ends through to deployment and hosting — and designs the automations that tie it all together. Shipped both WeCode and GgnHome to production.</p>
+        <div class="facts"><span>MERN</span><span>WordPress</span><span>Automation</span><span>Deployment</span></div>
+      </div>
+      <div class="member">
+        <div class="member-top"><div class="avatar">Y</div><div><h3>Yashasvi</h3><div class="role">AI / ML &amp; Backend · Co-founder</div></div></div>
+        <p>Computer Science at IIIT Delhi and an undergraduate researcher in the Advanced Robotics Lab. Builds the AI and backend side — recommendation systems, LLM fine-tuning and robust data-driven services — on a strong algorithms foundation.</p>
+        <div class="facts"><span>AI / ML</span><span>PyTorch</span><span>Backend</span><span>IIIT Delhi</span></div>
+      </div>
+    </div>
+    <div class="creds">
+      <div class="cred"><span class="cn grad">3rd</span><div><b>DevHeaven 2.0 Hackathon</b>IIIT Delhi · 2024</div></div>
+      <div class="cred"><span class="cn grad">Top 10</span><div><b>Fintech Hackathon</b>IIIT Delhi · 2024</div></div>
+      <div class="cred"><span class="cn grad">B.Tech</span><div><b>Computer Science, IIIT Delhi</b>Advanced Robotics Lab researcher</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="pricing">
+  <div class="wrap">
+    <div class="price">
+      <span class="sec-code"><b>//</b> How we price</span>
+      <h3>Every build is scoped on a quick call — and pricing is always <span class="grad">negotiable</span>.</h3>
+      <p>We don't do one-size-fits-all packages. Tell us what you're trying to build and we'll give you a clear, fair quote based on the scope. Simple projects stay light; larger ones are broken into milestones. Either way, you'll know the number before we start.</p>
+    </div>
+  </div>
+</section>
+
+<section class="sec contact" id="contact">
+  <div class="wrap contact-in">
+    <h2>Let's <span class="grad">forge</span> something.</h2>
+    <p class="lead">Have a project in mind, or just want to explore what's possible? Reach out — the first call is free, and we'll tell you honestly whether we're the right fit.</p>
+
+    <form class="contact-form" id="contactForm">
+      <h3>Send us a message</h3>
+      <p>Goes straight into our pipeline — a real person gets back to you.</p>
+      <div class="row">
+        <div class="field"><label>Name *</label><input type="text" name="name" required /></div>
+        <div class="field"><label>Email *</label><input type="email" name="email" required /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Company</label><input type="text" name="company" /></div>
+      </div>
+      <div class="field"><label>What are you looking to build?</label><textarea name="message" placeholder="Tell us a bit about the project…"></textarea></div>
+      <button type="submit" class="btn btn-molten">Send message</button>
+      <div class="form-status" id="formStatus"></div>
+    </form>
+
+    <div class="wa"><a href="https://wa.me/918130483894" class="btn btn-molten btn-lg">Message us on WhatsApp</a></div>
+    <div class="cards">
+      <div class="ccard">
+        <div class="who">Tanush</div><div class="what">Full-stack &amp; Automation</div>
+        <a href="tel:+918130483894"><span class="ic">☎</span> +91 81304 83894</a>
+        <a href="mailto:tanushchawla16@gmail.com"><span class="ic">✉</span> tanushchawla16@gmail.com</a>
+      </div>
+      <div class="ccard">
+        <div class="who">Yashasvi</div><div class="what">AI / ML &amp; Backend</div>
+        <a href="tel:+918527368086"><span class="ic">☎</span> +91 85273 68086</a>
+        <a href="mailto:yashasvi.ind1217@gmail.com"><span class="ic">✉</span> yashasvi.ind1217@gmail.com</a>
+      </div>
+    </div>
+    <div class="social">
+      <a href="https://github.com/Tanushh18" target="_blank" rel="noopener">github.com/Tanushh18</a>
+      <a href="https://github.com/yashasvi0904" target="_blank" rel="noopener">github.com/yashasvi0904</a>
+      <a href="https://linkedin.com/in/yashasvi-iiitd" target="_blank" rel="noopener">linkedin.com/in/yashasvi-iiitd</a>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <div class="foot-brand">
+      <svg width="22" height="22" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M7 8 L20 30 L33 8" stroke="url(#mg)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M20 4 L23.2 9.5 L20 15 L16.8 9.5 Z" fill="url(#mg)"/>
+      </svg>
+      <span class="name">Vex<span class="grad">Forge</span></span>
+    </div>
+    <p>Digital product &amp; automation studio · Delhi, India · 2026</p>
+  </div>
+</footer>
+
+<script>
+// Points at your local VexForge HQ server by default. When you deploy this
+// site for real, change API_BASE to your hosted server's URL.
+const API_BASE = window.VEXFORGE_API_BASE || "http://localhost:4000";
+
+document.getElementById("contactForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const status = document.getElementById("formStatus");
+  const data = Object.fromEntries(new FormData(form).entries());
+  status.textContent = "Sending…";
+  status.className = "form-status";
+  try {
+    const res = await fetch(`${API_BASE}/api/public/contact`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Something went wrong");
+    status.textContent = "Thanks — we'll be in touch shortly.";
+    status.className = "form-status ok";
+    form.reset();
+  } catch (err) {
+    status.textContent = `Couldn't send that: ${err.message}. Try WhatsApp instead.`;
+    status.className = "form-status err";
+  }
+});
+</script>
+</body>
+</html>
