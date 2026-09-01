@@ -28,6 +28,7 @@ export const api = {
   updateLead: (id, body) => request(`/leads/${id}`, { method: "PATCH", body }),
   deleteLead: (id) => request(`/leads/${id}`, { method: "DELETE" }),
   scrapeLead: (body) => request("/leads/scrape", { method: "POST", body }),
+  importLeadsCsv: (csv) => request("/leads/import-csv", { method: "POST", body: { csv } }),
 
   outreach: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
@@ -51,4 +52,10 @@ export const api = {
   chatConfig: () => request("/chat/config"),
   chatHistory: () => request("/chat/history"),
   sendChat: (message, history) => request("/chat", { method: "POST", body: { message, history } }),
+
+  scrapeJobs: () => request("/admin/scrape-jobs"),
+  scrapeJob: (id) => request(`/admin/scrape-jobs/${id}`),
+  createScrapeJob: (body) => request("/admin/scrape-jobs", { method: "POST", body }),
+
+  digestLatest: () => request("/digest/latest"),
 };

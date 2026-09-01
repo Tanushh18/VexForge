@@ -4,8 +4,9 @@ import Lead from "../models/Lead.js";
 import Employee, { setAgentStatus } from "../models/Employee.js";
 import { logActivity } from "../models/ActivityLog.js";
 import { requireAuth } from "../middleware/auth.js";
-import { generateOutreachDraft } from "../services/claudeService.js";
+import { generateOutreachDraft } from "../services/llmService.js";
 import { sendApprovedEmail, emailIsConfigured } from "../services/emailService.js";
+import { notify } from "../services/notifyService.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -38,6 +39,7 @@ router.post("/generate", async (req, res) => {
 
   if (agent) await setAgentStatus(agent._id, { status: "idle", currentTask: "Standing by — draft ready for review", bumpCompleted: true });
   await logActivity({ actor: agent?._id, actorName: agent?.name || "Quill", department: "Operations", action: `${channel} draft generated`, detail: lead.companyName, entityType: "OutreachMessage", entityId: msg._id });
+  await notify(`✍️ New ${channel} draft for *${lead.companyName}* — awaiting your approval.`);
 
   res.status(201).json(msg);
 });

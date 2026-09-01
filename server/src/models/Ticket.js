@@ -15,6 +15,9 @@ const ticketSchema = new Schema(
     channel: { type: String, enum: ["call", "email", "chat", "whatsapp"], default: "call" },
     reason: { type: String, enum: ["feedback", "support", "sales", "complaint"], default: "support" },
     status: { type: String, enum: ["open", "in_progress", "resolved", "escalated"], default: "open" },
+    // Auto-set from the transcript by the local model on creation (see
+    // llmService.classifyTicketUrgency) — a hint for triage order, not a hard rule.
+    urgency: { type: String, enum: ["low", "medium", "high"], default: "medium" },
     transcript: { type: String },
     summary: { type: String },
     resolutionNotes: { type: String },

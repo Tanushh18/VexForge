@@ -6,6 +6,7 @@ import Leads from "./pages/Leads.jsx";
 import Outreach from "./pages/Outreach.jsx";
 import Support from "./pages/Support.jsx";
 import Activity from "./pages/Activity.jsx";
+import Admin from "./pages/Admin.jsx";
 import ChatWidget from "./components/ChatWidget.jsx";
 
 function Shell() {
@@ -22,6 +23,7 @@ function Shell() {
         <NavLink to="/outreach" className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Outreach Queue</NavLink>
         <NavLink to="/support" className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Call & Support</NavLink>
         <NavLink to="/activity" className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Activity Log</NavLink>
+        <NavLink to="/admin" className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Admin · Deep Scan</NavLink>
         <div className="sidebar-foot">
           Signed in as <strong style={{ color: "var(--snow)" }}>{name}</strong>
           <button className="logout-btn" onClick={logout}>Sign out</button>
@@ -34,6 +36,7 @@ function Shell() {
           <Route path="/outreach" element={<Outreach />} />
           <Route path="/support" element={<Support />} />
           <Route path="/activity" element={<Activity />} />
+          <Route path="/admin" element={<Admin />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

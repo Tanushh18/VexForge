@@ -37,6 +37,20 @@ export default function Outreach() {
     try { await fn(id); await load(); } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
 
+  function editField(id, field, value) {
+    setItems((prev) => prev.map((m) => (m._id === id ? { ...m, [field]: value } : m)));
+  }
+
+  async function saveEdit(id) {
+    const msg = items.find((m) => m._id === id);
+    if (!msg) return;
+    setBusy(true);
+    try {
+      await api.updateOutreach(id, { subject: msg.subject, body: msg.body });
+      await load();
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  }
+
   return (
     <div>
       <div className="page-head">
@@ -90,13 +104,36 @@ export default function Outreach() {
                   <div className="hint">{m.channel} · {m.lead?.contactEmail || "no email on file"}</div>
                 </div>
                 <span className={`pill pill-${m.status}`}>{m.status}</span>
+                {m.isFollowUp && <span className="pill pill-default" style={{ marginLeft: 6 }}>follow-up</span>}
               </div>
-              {m.subject && <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13.5 }}>{m.subject}</div>}
-              <div style={{ whiteSpace: "pre-wrap", fontSize: 13.5, color: "var(--fog)", marginBottom: 14 }}>{m.body}</div>
+
+              {m.status === "draft" ? (
+                <>
+                  {m.channel === "email" && (
+                    <input
+                      value={m.subject || ""}
+                      onChange={(e) => editField(m._id, "subject", e.target.value)}
+                      placeholder="Subject"
+                      style={{ width: "100%", marginBottom: 8, fontWeight: 600, fontSize: 13.5 }}
+                    />
+                  )}
+                  <textarea
+                    value={m.body}
+                    onChange={(e) => editField(m._id, "body", e.target.value)}
+                    style={{ width: "100%", minHeight: 110, fontSize: 13.5, marginBottom: 8 }}
+                  />
+                </>
+              ) : (
+                <>
+                  {m.subject && <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13.5 }}>{m.subject}</div>}
+                  <div style={{ whiteSpace: "pre-wrap", fontSize: 13.5, color: "var(--fog)", marginBottom: 14 }}>{m.body}</div>
+                </>
+              )}
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {m.status === "draft" && (
                   <>
+                    <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => saveEdit(m._id)}>Save edit</button>
                     <button className="btn btn-molten btn-sm" disabled={busy} onClick={() => act(api.approveOutreach, m._id)}>Approve</button>
                     <button className="btn btn-danger btn-sm" disabled={busy} onClick={() => act(api.rejectOutreach, m._id)}>Reject</button>
                   </>

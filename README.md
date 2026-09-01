@@ -29,19 +29,32 @@ This matters, so it's not buried:
 | Capability | Status |
 |---|---|
 | Org dashboard, CRM, ticket system, activity log | Fully automated, real-time |
-| AI drafting of outreach copy (email & LinkedIn) | Fully automated (Claude) |
+| AI drafting of outreach copy (email & LinkedIn) | Fully automated — runs on a **local Qwen2.5 model** via [VexForge-LocalLLM](../VexForge-LocalLLM), no paid API key |
 | Sending **email** once you approve a draft | Automated *if* you configure SMTP — otherwise one click to open it in your mail client |
-| Sending **LinkedIn** messages | **Never automated.** No tool here can log into LinkedIn or drive a browser, and doing so violates LinkedIn's Terms of Service and risks the account. Approving a LinkedIn draft gives you the message text + a one-click search link for the company; you paste and send it yourself. |
-| Finding a company's contact email | A narrow, low-risk scraper that only reads a company's *own* public homepage/contact/about pages for a listed email — no LinkedIn, no private directories, no bulk harvesting |
+| Sending **LinkedIn** messages | **Never automated.** No tool here can log into LinkedIn or drive a browser to send anything, and doing so violates LinkedIn's Terms of Service and risks the account. Approving a LinkedIn draft gives you the message text + a one-click search link for the company; you paste and send it yourself. |
+| Finding a company's contact email (fast path) | A narrow, low-risk scraper that only reads a company's *own* public homepage/contact/about pages for a listed email — no LinkedIn, no private directories, no bulk harvesting |
+| Finding a company's contact email (JS-rendered sites) | The Admin · Deep Scan page runs the same lookup through a real headless browser (Playwright) for sites that render contact info client-side — only used as a fallback when the fast scan finds nothing |
 | Cold-email sending | Sits in the approval queue by design — nothing goes out until you click Approve, per your earlier call to keep a human review step |
 | Live phone calls / auto-transcription | Not wired up (needs your own Twilio number or similar). The Support page logs calls via pasted transcripts today; see "Extending" below for how to add live telephony |
 | Voice input/output on the chatbot | Browser-native (Web Speech API) — works in Chrome/Edge, no extra service or key needed |
+| Bulk lead import | CSV upload on the Leads page, with automatic duplicate rejection (by company name or website domain) |
+| Contact enrichment | If you add a lead manually with a website but no email, a background scan fills the email in automatically when it finds one |
+| Reply detection | *If* `IMAP_HOST` is configured, polls an inbox every 5 minutes and flips a lead to "responded" when someone from its `contactEmail` writes back |
+| Follow-up nudges | A lead sitting in "outreach_sent" with no reply for `FOLLOWUP_AFTER_DAYS` (default 4) gets one automatic follow-up draft queued — same approval gate as any other draft |
+| Ticket urgency tagging | Auto-classified from the transcript by the local model on ticket creation — a triage hint, not authoritative |
+| Weekly digest | Auto-generated from the activity log once a week, shown on the Dashboard and pushed to Telegram if configured |
+| Push notifications | *If* `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` are set: new draft ready, high-urgency ticket, ticket escalated, lead replied, weekly digest |
 
 ## Stack
 
-- **server/** — Node + Express + MongoDB (Mongoose), JWT auth, Anthropic SDK for the chatbot, Nodemailer for approved email sends, Cheerio/Axios for the contact scraper.
+- **server/** — Node + Express + MongoDB (Mongoose), JWT auth, Nodemailer for approved email sends,
+  Cheerio/Axios for the fast contact scraper, Playwright for the JS-rendered deep-scan fallback. Talks to
+  the local LLM over plain HTTP — no vendor SDK.
 - **client/** — React + Vite, no UI framework — plain CSS matching the VexForge brand.
 - **website/** — the public marketing site (your catalogue page) with a contact form that posts to the CRM as an opt-in lead.
+- **[VexForge-LocalLLM](../VexForge-LocalLLM)** — a separate sibling project: Qwen2.5 running locally via
+  Ollama, wrapped in a small REST API. This app is a client of that service (`LOCAL_LLM_URL`), not the
+  other way around — see that project's own README to run/tunnel it.
 
 ## Project layout
 
@@ -49,7 +62,7 @@ This matters, so it's not buried:
 VexForge-Automation/
 ├── client/                  React + Vite frontend
 │   ├── src/
-│   │   ├── pages/           Dashboard, Leads, Outreach, Support, Activity, Login
+│   │   ├── pages/           Dashboard, Leads, Outreach, Support, Activity, Admin, Login
 │   │   ├── components/      ChatWidget, OrgChart, ...
 │   │   ├── hooks/
 │   │   ├── services/        API client wrappers
@@ -57,11 +70,12 @@ VexForge-Automation/
 │   └── vite.config.js
 ├── server/                  Express backend
 │   ├── src/
-│   │   ├── routes/          auth, employees, leads, outreach, tickets, activity, chat, public
-│   │   ├── models/          Employee, Lead, OutreachMessage, Ticket, ActivityLog, ChatMessage
-│   │   ├── services/        claudeService, emailService, scraperService, seed
+│   │   ├── routes/          auth, employees, leads, outreach, tickets, activity, chat, public, admin, digest
+│   │   ├── models/          Employee, Lead, OutreachMessage, Ticket, ActivityLog, ChatMessage, ScrapeJob, Digest
+│   │   ├── services/        llmService, emailService, scraperService, notifyService, inboxService, followUpService, digestService, seed
 │   │   ├── middleware/
 │   │   └── config/
+│   ├── test/                node:test unit tests for the pure/deterministic pieces
 │   └── .env.example
 ├── website/                 Public marketing site (static HTML)
 ├── package.json             Root scripts (installs/runs server + client together)
@@ -72,7 +86,11 @@ VexForge-Automation/
 
 - **Node.js 20+** and npm
 - **MongoDB** — a local `mongod`, a Docker container, or a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster
-- An **Anthropic API key** (for the Ember chatbot) — get one at [console.anthropic.com](https://console.anthropic.com)
+- **[VexForge-LocalLLM](../VexForge-LocalLLM) running** (for the Ember chatbot + outreach drafting) — no
+  paid API key, just Ollama + Qwen2.5 running locally. See that project's README to set it up; this app
+  just needs `LOCAL_LLM_URL` pointed at it.
+- **Playwright's Chromium** installed for the Admin deep-scan page: `npx playwright install chromium`
+  (one-time, ~95MB download)
 - *(Optional)* SMTP credentials (e.g. a Gmail app password) if you want one-click email sending instead of opening drafts in your mail client
 
 ## Getting started
@@ -110,9 +128,9 @@ VexForge-Automation/
    CEO_PASSWORD=change_this_password
    CEO_NAME=Your Name
 
-   # --- Chatbot (Claude) ---
-   # Required for the chat console (text + voice). Get a key at console.anthropic.com
-   ANTHROPIC_API_KEY=
+   # --- Chatbot (local Qwen model, via the separate VexForge-LocalLLM project) ---
+   # No paid API key needed — run ../VexForge-LocalLLM and point this at it.
+   LOCAL_LLM_URL=http://localhost:5001
 
    # --- Email outreach (nodemailer) ---
    # Only used when YOU click "Send" on an approved draft — nothing sends automatically.
@@ -129,8 +147,9 @@ VexForge-Automation/
    TRANSCRIBE_API_URL=https://api.openai.com/v1/audio/transcriptions
    ```
 
-   Only `MONGO_URI`, `JWT_SECRET`, `CEO_EMAIL`/`CEO_PASSWORD`, and `ANTHROPIC_API_KEY` are required
-   to run the app. SMTP and transcription are optional enhancements.
+   Only `MONGO_URI`, `JWT_SECRET`, and `CEO_EMAIL`/`CEO_PASSWORD` are required to run the app at all.
+   `LOCAL_LLM_URL` is required for the chatbot and AI drafting specifically (the rest of the app works
+   without it). SMTP and transcription are optional enhancements.
 
 4. **Start MongoDB** (skip if you're using Atlas)
 
@@ -180,6 +199,17 @@ npm run build --prefix client      # production build
 npm run preview --prefix client    # preview the production build
 ```
 
+### Tests
+
+```bash
+npm test --prefix server           # node's built-in test runner, no extra dependency
+```
+
+Covers the deterministic, non-DB, non-network pieces: CSV parsing, lead-dedupe domain matching, the
+chat intent router's keyword classification, email extraction, and the private-IP guard on the
+scraper. These are exactly the parts most likely to silently regress since nothing else here would
+catch it — everything DB/network-backed is exercised by using the app, not by these tests.
+
 ## API overview
 
 All routes are mounted under `/api` on the server (`server/src/index.js`), backed by the route
@@ -195,22 +225,50 @@ files in `server/src/routes/`:
 | `activity.js` | Company-wide activity log |
 | `chat.js` | Ember chatbot command endpoint (text + voice transcripts) |
 | `public.js` | Public contact form → CRM lead intake (used by `website/`) |
+| `admin.js` | Playwright deep-scan jobs (queue, poll status) |
+| `digest.js` | Latest/recent weekly digests |
 
 ## Using the chatbot (Ember)
 
-Click the chat launcher (bottom-right) or use the mic button to speak a command. Examples:
+Click the chat launcher (bottom-right) or use the mic button to speak a command. Ember runs on a small
+local model (Qwen2.5-3B by default), so read commands are routed **deterministically in Node** (keyword
+matching against your actual data — no free-form tool-picking) and the model is only asked to turn the
+result into a fluent sentence. That trade-off buys reliability at the cost of scope: Ember answers
+questions, it doesn't take actions from chat. Examples that work:
 
 - "Give me a company status update."
 - "What's the Operations team working on?"
 - "List leads that are still new."
-- "Add a lead: Acme Robotics, acme.example, contact priya@acme.example."
-- "Draft a LinkedIn message for that lead."
 - "Show me the outreach queue awaiting approval."
-- "What happened in the last hour?" *(recent activity log)*
+- "What happened recently?" *(recent activity log)*
 
-Ember has tools to read and act on real data (see `server/src/services/claudeService.js`), but it
-will never claim to have sent a LinkedIn message — it can only draft and hand off to the approval
-queue, consistent with the constraint above.
+Adding a lead or drafting outreach is done through the CRM/Outreach pages' own forms, not chat — see
+`server/src/services/llmService.js` for the router and the "why" behind that choice. Ember will never
+claim to have sent a LinkedIn message — nothing here can send LinkedIn messages, automated or otherwise.
+
+## Automation & notifications
+
+Three background jobs run inside the server process on plain `setInterval` timers (see
+`startBackgroundJobs` in `src/index.js`) — no separate worker or queue system needed at this scale:
+
+| Job | Interval | What it does |
+|---|---|---|
+| Reply check | 5 min | Polls IMAP for unseen mail from a known lead's `contactEmail`; flips that lead + its sent `OutreachMessage` to "responded" |
+| Follow-up check | 6 hr | Queues one follow-up draft per lead quiet for `FOLLOWUP_AFTER_DAYS` since their message was sent |
+| Weekly digest | checked every 12 hr, runs once/week | Summarizes the last 7 days of the activity log via the local model |
+
+All three are safe to leave unconfigured — `inboxService.imapConfigured()` gates the reply check,
+and the others just find nothing to do without real data. Notifications (`notifyService.js`) are the
+same story: every call is a no-op without `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` set.
+
+To set up Telegram notifications: message [@BotFather](https://t.me/BotFather) on Telegram to create a
+bot and get a token, send your new bot any message once, then fetch
+`https://api.telegram.org/bot<token>/getUpdates` and read the chat id out of the response. Put both in
+`server/.env`.
+
+To set up reply detection: it defaults to your `SMTP_USER`/`SMTP_PASS` (same Gmail account, different
+protocol/port) — set `IMAP_HOST` (and `IMAP_USER`/`IMAP_PASS` only if replies land in a different inbox
+than you send from). A Gmail app password works for both SMTP and IMAP.
 
 ## Extending
 
@@ -228,6 +286,15 @@ queue, consistent with the constraint above.
 
 - `server/.env` is git-ignored — never commit real credentials. Only `server/.env.example`
   (with placeholder values) is tracked.
-- `JWT_SECRET` and `CEO_PASSWORD` should be long, random values in any real deployment.
+- `JWT_SECRET` and `CEO_PASSWORD` should be long, random values in any real deployment — required, not
+  optional, the moment this is reachable from outside your own machine (e.g. behind a tunnel).
 - The contact scraper only reads a company's own public pages — it does not touch LinkedIn or any
   authenticated/private source.
+- Both scraper tiers refuse to scan a domain that resolves to a private/loopback/link-local address
+  (`assertPublicHost` in `scraperService.js`) — the Playwright tier drives a full browser, which is a much
+  bigger blast radius than a plain GET if pointed at something internal.
+- `VexForge-LocalLLM`'s API has no auth — only run it on a private network, or behind a tunnel URL you
+  don't share.
+- Rate limiting (`express-rate-limit`) is on: a general ceiling on `/api/*` and a much tighter one on
+  `/api/auth/login` specifically, since that's the credential-guessing target now that this can be
+  reachable over a public tunnel.

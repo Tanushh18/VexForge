@@ -22,6 +22,9 @@ const outreachMessageSchema = new Schema(
     sentAt: { type: Date },
     sentVia: { type: String, enum: ["auto_email", "manual"], default: "manual" },
     reviewNote: { type: String },
+    // Set by followUpService when a lead's gone quiet after the first
+    // message — lets the nudge job know not to draft a second follow-up.
+    isFollowUp: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

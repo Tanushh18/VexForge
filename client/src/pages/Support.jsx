@@ -76,7 +76,7 @@ export default function Support() {
         <div className="empty">No tickets logged yet.</div>
       ) : (
         <table className="table">
-          <thead><tr><th>Contact</th><th>Reason</th><th>Channel</th><th>Status</th></tr></thead>
+          <thead><tr><th>Contact</th><th>Reason</th><th>Urgency</th><th>Channel</th><th>Status</th></tr></thead>
           <tbody>
             {tickets.map((t) => (
               <tr key={t._id}>
@@ -85,6 +85,7 @@ export default function Support() {
                   <div className="hint">{t.company}</div>
                 </td>
                 <td><span className="pill pill-default">{t.reason}</span></td>
+                <td><span className={`pill pill-${t.urgency === "high" ? "escalated" : t.urgency === "low" ? "resolved" : "open"}`}>{t.urgency || "medium"}</span></td>
                 <td>{t.channel}</td>
                 <td>
                   <select value={t.status} onChange={(e) => update(t._id, { status: e.target.value })} className="pill pill-default" style={{ border: "1px solid var(--line)", background: "var(--iron-2)" }}>

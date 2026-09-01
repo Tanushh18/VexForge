@@ -1,7 +1,7 @@
 import { Router } from "express";
 import ChatMessage from "../models/ChatMessage.js";
 import { requireAuth } from "../middleware/auth.js";
-import { runChatTurn, chatbotConfigured } from "../services/claudeService.js";
+import { runChatTurn, chatbotConfigured } from "../services/llmService.js";
 
 const router = Router();
 router.use(requireAuth);
