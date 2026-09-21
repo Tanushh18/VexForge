@@ -465,6 +465,95 @@ Splitting is a legitimate answer: static sites on a free host, the API on a smal
 Ollama on your own machine behind a tunnel. The router degrades cleanly when the models are
 unreachable, so the split never takes the app down — it just narrows what it can do.
 
+## Rollout phases — what runs where, and when to move
+
+The split isn't local-vs-cloud so much as **workload-vs-uptime**. Two facts drive it:
+
+- The models need RAM and speed, so they stay on hardware you own.
+- Reply detection, follow-ups and the contact form only work if something is always on.
+
+The lever that makes this cheap: **both the local and the deployed API talk to the same Atlas
+database.** So Chromium — the single biggest memory cost — can keep running on your laptop long
+after the rest is deployed, writing into the same CRM. You don't pay for a 2GB instance until you
+actually want discovery running unattended.
+
+### Phase 0 — everything local
+
+| | |
+|---|---|
+| **Local** | MongoDB, Ollama + all 3 models, API, console, marketing site |
+| **Deployed** | nothing |
+| **Settings** | `PIPELINE_SCHEDULE_ENABLED=false` — trigger every run by hand |
+
+```bash
+npm run install:all && npx playwright install chromium
+cp server/.env.example server/.env    # fill in MONGO_URI, JWT_SECRET, CEO_*
+npm run dev
+```
+
+The point of this phase is to find out whether the discovery sources actually surface companies
+worth emailing — **before** paying for anything. Watch a full run from the Lead Pipeline page, then
+read the top 10 in the CRM and ask whether you'd genuinely contact them. If Product Hunt's markup
+has shifted or the scoring is mis-ranking, you want to learn that for free.
+
+**Move on when:** a manual run produces leads you'd actually email, and the drafts read like
+something you'd send.
+
+### Phase 1 — deploy the shopfront, keep the heavy work local
+
+| | |
+|---|---|
+| **Local** | Ollama + models, **and the pipeline runs** (Chromium stays on your machine) |
+| **Deployed** | Marketing site, console, API — on a **512MB Starter instance** |
+| **Database** | Atlas, shared by both your laptop and the deployed API |
+| **Settings** | `PIPELINE_SCHEDULE_ENABLED=false` on the deployed instance |
+
+Change `plan: standard` to `plan: starter` in `render.yaml` for this phase. 512MB is plenty for
+everything **except** Chromium — and Chromium isn't running there yet, because you're still
+triggering pipeline runs from your laptop against the same Atlas cluster.
+
+What the deployed side buys you immediately: the contact form goes live, the CRM is reachable from
+your phone, and IMAP reply detection runs around the clock — that one needs no model at all, so it
+works whether or not your laptop is on.
+
+What still needs your machine awake: drafting, the chatbot, follow-up generation and the weekly
+digest, since all four need Ollama. Point `OLLAMA_URL` at your desktop through a Cloudflare tunnel
+and they work whenever it's up.
+
+**Move on when:** you're tired of remembering to trigger runs manually.
+
+### Phase 2 — hand discovery to the cloud
+
+| | |
+|---|---|
+| **Local** | Ollama + models only (tunnelled) |
+| **Deployed** | Everything else, now including discovery |
+| **Settings** | `plan: standard` (2GB, for Chromium) · `PIPELINE_SCHEDULE_ENABLED=true` |
+
+This is the autonomous configuration: it discovers, enriches, scores and drafts on a 24-hour cycle,
+and you review the approval queue whenever you feel like it.
+
+**Know this before you flip it.** If the deployed API can't reach Ollama — laptop closed, tunnel
+down — a scheduled run still discovers, dedupes, enriches and scores, because deterministic scoring
+needs no model. But **drafting produces nothing for that batch and nothing retries it later.** Those
+leads sit at `new` with no draft. `POST /api/leads/rescore` catches scoring up; there is no
+equivalent for drafting yet, so today you'd generate those one at a time from the Outreach page.
+
+If your Ollama host isn't reliably on, stay on Phase 1 — a nightly run whose drafts silently go
+missing is worse than one you trigger yourself.
+
+### At a glance
+
+| Component | Phase 0 | Phase 1 | Phase 2 |
+|---|---|---|---|
+| Marketing site | local | **deployed** | deployed |
+| Console (`client/`) | local | **deployed** | deployed |
+| API | local | **deployed** (512MB) | deployed (2GB) |
+| MongoDB | local | **Atlas** | Atlas |
+| Pipeline / Chromium | local | local | **deployed** |
+| Ollama + models | local | local (tunnelled) | local (tunnelled) |
+| Scheduled runs | off | off | **on** |
+
 ## Deploying to Render
 
 `render.yaml` in the repo root is a Blueprint for all three services: the API (Docker, since lead
