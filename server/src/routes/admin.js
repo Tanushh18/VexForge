@@ -5,9 +5,32 @@ import Employee, { setAgentStatus } from "../models/Employee.js";
 import { logActivity } from "../models/ActivityLog.js";
 import { requireAuth } from "../middleware/auth.js";
 import { scrapeCompanyContactTiered } from "../services/scraperService.js";
+import { modelStatus, refreshModelHealth } from "../services/modelRouter.js";
+import { jobStatus, runJobNow } from "../services/jobRegistry.js";
+import { scoreLead } from "../services/scoringService.js";
 
 const router = Router();
 router.use(requireAuth);
+
+// Which local models are actually pulled and which role each one is serving —
+// the fastest way to tell "the drafting model isn't downloaded" apart from
+// "Ollama isn't running" when a draft fails.
+router.get("/models", async (_req, res) => {
+  await refreshModelHealth();
+  res.json(modelStatus());
+});
+
+router.get("/jobs", (_req, res) => {
+  res.json(jobStatus());
+});
+
+router.post("/jobs/:key/run", async (req, res) => {
+  try {
+    res.json(await runJobNow(req.params.key));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
 
 router.get("/scrape-jobs", async (_req, res) => {
   const jobs = await ScrapeJob.find().sort({ createdAt: -1 }).limit(30).lean();
@@ -51,14 +74,15 @@ async function runScrapeJob(jobId) {
     job.finishedAt = new Date();
 
     if (result.emails.length) {
-      const lead = await Lead.create({
+      const candidate = {
         companyName: job.companyName,
         industry: job.industry || "Unknown",
         website: result.website,
         contactEmail: result.emails[0],
         source: "website_scraper",
         sourceNote: `Deep scan (${result.tier}) — found on: ${result.pagesOk.join(", ")}`,
-      });
+      };
+      const lead = await Lead.create({ ...candidate, ...scoreLead(candidate), scoredAt: new Date() });
       job.leadId = lead._id;
       await logActivity({
         actor: agent?._id,

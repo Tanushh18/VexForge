@@ -3,6 +3,8 @@ import { api } from "../services/api.js";
 
 const STAGES = ["new", "reviewed", "outreach_drafted", "outreach_sent", "responded", "call_booked", "won", "lost"];
 
+const BAND_COLOR = { hot: "var(--molten)", warm: "var(--snow)", cold: "var(--muted)" };
+
 export default function Leads() {
   const [leads, setLeads] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -143,19 +145,34 @@ export default function Leads() {
         <div className="empty">No leads yet — add one manually, scan a website, or import a CSV.</div>
       ) : (
         <table className="table">
-          <thead><tr><th>Company</th><th>Contact</th><th>Source</th><th>Stage</th><th></th></tr></thead>
+          <thead><tr><th>Score</th><th>Company</th><th>Contact</th><th>Source</th><th>Stage</th><th></th></tr></thead>
           <tbody>
             {leads.map((l) => (
               <tr key={l._id}>
                 <td>
+                  <div style={{ fontWeight: 700, color: BAND_COLOR[l.scoreBand] || "var(--snow)" }}>{l.score ?? 0}</div>
+                  <div className="hint">{l.scoreBand || "cold"}</div>
+                </td>
+                <td>
                   <div style={{ fontWeight: 600 }}>{l.companyName}</div>
                   <div className="hint">{l.website}</div>
+                  {l.fitReason && <div className="hint" style={{ fontStyle: "italic" }}>{l.fitReason}</div>}
+                  {!!l.signals?.length && (
+                    <div className="hint">{l.signals.filter((s) => !s.startsWith("has_")).join(" · ")}</div>
+                  )}
                 </td>
                 <td>
                   <div>{l.contactName || "—"}</div>
                   <div className="hint">{l.contactEmail || "no email on file"}</div>
                 </td>
-                <td><span className="pill pill-default">{l.source}</span></td>
+                <td>
+                  <span className="pill pill-default">{l.source}</span>
+                  {l.sourceUrl && (
+                    <div className="hint">
+                      <a href={l.sourceUrl} target="_blank" rel="noreferrer">{l.discoverySource || "source"}</a>
+                    </div>
+                  )}
+                </td>
                 <td>
                   <select value={l.stage} onChange={(e) => setStage(l._id, e.target.value)} className="pill pill-default" style={{ border: "1px solid var(--line)", background: "var(--iron-2)" }}>
                     {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}

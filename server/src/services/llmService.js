@@ -1,14 +1,16 @@
 import Employee, { setAgentStatus } from "../models/Employee.js";
+import PipelineRun from "../models/PipelineRun.js";
 import Lead from "../models/Lead.js";
 import OutreachMessage from "../models/OutreachMessage.js";
 import Ticket from "../models/Ticket.js";
 import ActivityLog, { logActivity } from "../models/ActivityLog.js";
 
-// Talks to the VexForge-LocalLLM service (a separate project — see its
-// README) instead of a paid Claude/OpenAI API. That service wraps a locally
-// running Qwen2.5 model via Ollama. Point LOCAL_LLM_URL at a tunnel URL if
-// the model is running on a different machine than this server.
-const LOCAL_LLM_URL = (process.env.LOCAL_LLM_URL || "http://localhost:5001").replace(/\/$/, "");
+import { complete, completeJson, llmReady } from "./modelRouter.js";
+
+// All inference goes through modelRouter, which picks a *local* model per
+// role: `drafting` for outreach copy, `fast` for classification and one-line
+// summaries, `reasoning` for anything that changes what the pipeline does.
+// No paid API, and no single model asked to be good at everything.
 
 const VEXFORGE_PITCH = `VexForge is a digital product & automation studio (Delhi, India) run by Tanush
 (full-stack & automation) and Yashasvi (AI/ML & backend). Services: full-stack web apps (MERN, WordPress,
@@ -17,98 +19,92 @@ workflows, lead-gen & CRM sync), and AI solutions (chatbots on your own docs, re
 LLM fine-tuning). Live proof: WeCode (coding platform) and GgnHome (real-estate platform with AI search) are
 both in production. Pricing is scoped per project on a free intro call, no fixed packages.`;
 
-// --- Health polling -------------------------------------------------------
-// chatbotConfigured() is called synchronously from a route handler, so we
-// keep a small background poll and answer from cache rather than doing a
-// live network round-trip on every request.
-let healthy = false;
-async function refreshHealth() {
-  try {
-    const res = await fetch(`${LOCAL_LLM_URL}/health`, { signal: AbortSignal.timeout(3000) });
-    const data = await res.json();
-    healthy = !!(data.ok && data.modelPulled);
-  } catch {
-    healthy = false;
-  }
-}
-refreshHealth();
-setInterval(refreshHealth, 15000).unref?.();
-
 export function chatbotConfigured() {
-  return healthy;
+  return llmReady();
 }
 
-async function callLocalLLM(path, body) {
-  const res = await fetch(`${LOCAL_LLM_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30000),
+function draftSystemPrompt(channel, extra = "") {
+  return `You write short, specific B2B outreach for VexForge. Channel: ${channel}.
+${VEXFORGE_PITCH}
+${extra}
+Rules: under 140 words, no buzzwords, no "I hope this finds you well", reference something concrete about
+the company, and end with one low-friction ask (a 15-minute call). Reply with JSON only:
+{"subject": "<short subject, empty string for linkedin>", "body": "<the message>"}`;
+}
+
+function leadBrief(lead) {
+  return JSON.stringify({
+    companyName: lead.companyName,
+    industry: lead.industry,
+    website: lead.website,
+    contactName: lead.contactName,
+    notes: lead.notes,
+    signals: lead.signals,
   });
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error(detail.error || `Local LLM service returned ${res.status}`);
-  }
-  return res.json();
 }
 
 // Generates ONE outreach draft (email or linkedin) for a specific lead —
-// single-shot, no tools, no side effects beyond returning text.
+// single-shot, no tools, no side effects beyond returning text. Runs on the
+// `drafting` model: fluency matters here, judgement less so.
 export async function generateOutreachDraft({ channel, lead }) {
-  if (!healthy) throw new Error("Local LLM service isn't reachable — is VexForge-LocalLLM running?");
-  const { subject, body } = await callLocalLLM("/v1/generate-draft", {
-    channel,
-    pitch: VEXFORGE_PITCH,
-    lead: {
-      companyName: lead.companyName,
-      industry: lead.industry,
-      website: lead.website,
-      contactName: lead.contactName,
-      notes: lead.notes,
-    },
+  const result = await completeJson("drafting", {
+    system: draftSystemPrompt(channel),
+    prompt: leadBrief(lead),
+    timeoutMs: 120000,
   });
-  return { subject, body };
+  if (!result?.body) throw new Error("The drafting model returned no usable message — check `ollama ps`.");
+  return { subject: result.subject || `Quick idea for ${lead.companyName}`, body: result.body };
 }
 
 // Drafts a polite nudge for a lead that's gone quiet after an initial
 // message — same generator, framed as a follow-up rather than a first touch.
 export async function generateFollowUpDraft({ channel, lead, daysSinceSent }) {
-  if (!healthy) throw new Error("Local LLM service isn't reachable — is VexForge-LocalLLM running?");
-  const { subject, body } = await callLocalLLM("/v1/generate-draft", {
-    channel,
-    pitch: `${VEXFORGE_PITCH}\n\nThis is a FOLLOW-UP — you already reached out ${daysSinceSent} days ago and
-haven't heard back. Keep it brief, friendly, no guilt-tripping, and reference that this is a follow-up
-without repeating the full original pitch.`,
-    lead: {
-      companyName: lead.companyName,
-      industry: lead.industry,
-      website: lead.website,
-      contactName: lead.contactName,
-      notes: lead.notes,
-    },
+  const result = await completeJson("drafting", {
+    system: draftSystemPrompt(
+      channel,
+      `This is a FOLLOW-UP — you already reached out ${daysSinceSent} days ago and heard nothing back. Keep it
+brief and friendly, no guilt-tripping, reference that it's a follow-up, and do not repeat the full pitch.`
+    ),
+    prompt: leadBrief(lead),
+    timeoutMs: 120000,
   });
-  return { subject, body };
+  if (!result?.body) throw new Error("The drafting model returned no usable follow-up message.");
+  return { subject: result.subject || `Following up — ${lead.companyName}`, body: result.body };
 }
 
 // Tags a support ticket's urgency from its transcript — a hint for triage
-// order, not authoritative; the human-set status field still governs.
+// order, not authoritative; the human-set status field still governs. Runs on
+// the `fast` model: it fires on every ticket and a one-word answer doesn't
+// need a 14B model.
 export async function classifyTicketUrgency(transcript) {
-  if (!healthy || !transcript) return "medium";
+  if (!transcript || !llmReady()) return "medium";
   try {
-    const { urgency } = await callLocalLLM("/v1/classify", {
-      text: transcript,
-      categories: { urgency: ["low", "medium", "high"] },
+    const result = await completeJson("fast", {
+      system: 'Classify the urgency of this support transcript. Reply with JSON only: {"urgency":"low"|"medium"|"high"}',
+      prompt: transcript.slice(0, 4000),
+      timeoutMs: 30000,
     });
-    return urgency || "medium";
+    const urgency = result?.urgency;
+    return ["low", "medium", "high"].includes(urgency) ? urgency : "medium";
   } catch {
     return "medium";
   }
 }
 
+// The weekly digest is a judgement call about what mattered, so it goes to
+// the reasoning model rather than the fast one.
 export async function summarizeForDigest(instruction, data) {
-  if (!healthy) return null;
-  const { text } = await callLocalLLM("/v1/summarize", { instruction, data });
-  return text;
+  if (!llmReady()) return null;
+  try {
+    return await complete("reasoning", {
+      system: "You are a chief of staff writing an internal weekly digest. Plain English, no bullet points.",
+      prompt: `${instruction}\n\n${JSON.stringify(data)}`,
+      timeoutMs: 120000,
+    });
+  } catch (err) {
+    console.error("[digest] summarize failed:", err.message);
+    return null;
+  }
 }
 
 // --- Deterministic intent router -------------------------------------------
@@ -173,7 +169,23 @@ async function toolRecentActivity() {
   return items.map((a) => ({ when: a.createdAt, who: a.actorName, dept: a.department, action: a.action, detail: a.detail }));
 }
 
+async function toolPipelineStatus() {
+  const runs = await PipelineRun.find().sort({ createdAt: -1 }).limit(5).lean();
+  const [hot, warm] = await Promise.all([
+    Lead.countDocuments({ scoreBand: "hot" }),
+    Lead.countDocuments({ scoreBand: "warm" }),
+  ]);
+  return {
+    hotLeads: hot,
+    warmLeads: warm,
+    recentRuns: runs.map((r) => ({ when: r.createdAt, status: r.status, trigger: r.trigger, ...r.stats })),
+  };
+}
+
 const INTENTS = [
+  // Ahead of "leads", since "how's the lead pipeline doing" should report the
+  // pipeline's runs rather than listing every lead in the CRM.
+  { name: "pipeline", pattern: /\b(pipeline|discovery|scrape run|lead run|sourcing)\b/i },
   { name: "status", pattern: /\b(status|overview|update|how (are|is) (things|we|the company))\b/i },
   { name: "department", pattern: /\b(department|team)\b/i },
   { name: "leads", pattern: /\bleads?\b/i },
@@ -189,9 +201,10 @@ export function classify(message) {
   return null;
 }
 
-const HELP_TEXT = `I can give you a company status update, check a department, list leads (optionally by
-stage), show the outreach queue, list support tickets, or recap recent activity. Try: "give me a status
-update", "what's Operations working on", "list new leads", or "what happened recently".`;
+const HELP_TEXT = `I can give you a company status update, report on the lead pipeline, check a department,
+list leads (optionally by stage), show the outreach queue, list support tickets, or recap recent activity.
+Try: "give me a status update", "how's the pipeline doing", "what's Operations working on", "list new
+leads", or "what happened recently".`;
 
 export async function runChatTurn(userMessage, _history = []) {
   const head = await findAgentByTitleFragment("Head Manager");
@@ -204,6 +217,10 @@ export async function runChatTurn(userMessage, _history = []) {
     let instruction;
 
     switch (intent) {
+      case "pipeline":
+        data = await toolPipelineStatus();
+        instruction = "Summarize how the lead-generation pipeline is performing.";
+        break;
       case "status":
         data = await toolGetCompanyStatus();
         instruction = "Summarize this company status update like a chief of staff.";
@@ -241,11 +258,14 @@ export async function runChatTurn(userMessage, _history = []) {
     }
 
     if (!reply) {
-      if (!healthy) {
+      if (!llmReady()) {
         reply = `Local model isn't reachable right now, but here's the raw data: ${JSON.stringify(data)}`;
       } else {
-        const { text } = await callLocalLLM("/v1/summarize", { instruction, data });
-        reply = text;
+        reply = await complete("fast", {
+          system: "You are Ember, the chief of staff. Answer in two or three plain sentences. No bullet points.",
+          prompt: `${instruction}\n\n${JSON.stringify(data)}`,
+          timeoutMs: 60000,
+        });
       }
     }
   } finally {

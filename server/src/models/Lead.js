@@ -20,10 +20,25 @@ const leadSchema = new Schema(
     linkedinCompanyUrl: { type: String },
     source: {
       type: String,
-      enum: ["manual", "website_scraper", "csv_import", "referral"],
+      enum: ["manual", "website_scraper", "csv_import", "referral", "discovery"],
       default: "manual",
     },
     sourceNote: { type: String },
+    // Which discovery adapter found this (product_hunt, hn_launches, ...) and
+    // the public page it was found on, so any lead can be traced back to a
+    // human-checkable URL rather than appearing from nowhere.
+    discoverySource: { type: String },
+    sourceUrl: { type: String },
+    discoveredAt: { type: Date },
+    // Scoring: `signals` are the deterministic facts observed about the lead,
+    // `score` is computed from them (see scoringService), and `fitReason` is
+    // the local reasoning model's optional one-line take. The score ranks the
+    // outreach queue — it never authorizes a send on its own.
+    signals: [{ type: String }],
+    score: { type: Number, default: 0, index: true },
+    scoreBand: { type: String, enum: ["hot", "warm", "cold"], default: "cold" },
+    fitReason: { type: String },
+    scoredAt: { type: Date },
     stage: {
       type: String,
       enum: [

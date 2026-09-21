@@ -5,9 +5,7 @@ import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import { connectDB } from "./config/db.js";
 import { runSeed } from "./services/seed.js";
-import { checkForReplies } from "./services/inboxService.js";
-import { runFollowUpCheck } from "./services/followUpService.js";
-import { generateWeeklyDigest, shouldRunWeeklyDigest } from "./services/digestService.js";
+import { startBackgroundJobs } from "./services/jobRegistry.js";
 
 import authRoutes from "./routes/auth.js";
 import employeeRoutes from "./routes/employees.js";
@@ -19,6 +17,7 @@ import activityRoutes from "./routes/activity.js";
 import publicRoutes from "./routes/public.js";
 import adminRoutes from "./routes/admin.js";
 import digestRoutes from "./routes/digest.js";
+import pipelineRoutes from "./routes/pipeline.js";
 
 const app = express();
 app.set("trust proxy", 1); // behind a tunnel/reverse proxy — needed for rate-limit to key on the real client IP
@@ -48,6 +47,7 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/activity", activityRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/digest", digestRoutes);
+app.use("/api/pipeline", pipelineRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);
@@ -55,26 +55,6 @@ app.use((err, _req, res, _next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-
-function startBackgroundJobs() {
-  const REPLY_CHECK_MS = 5 * 60 * 1000;
-  const FOLLOWUP_CHECK_MS = 6 * 60 * 60 * 1000;
-  const DIGEST_CHECK_MS = 12 * 60 * 60 * 1000;
-
-  const safe = (name, fn) => fn().catch((err) => console.error(`[jobs] ${name} failed:`, err.message));
-
-  setInterval(() => safe("checkForReplies", checkForReplies), REPLY_CHECK_MS).unref();
-  setInterval(() => safe("runFollowUpCheck", runFollowUpCheck), FOLLOWUP_CHECK_MS).unref();
-  setInterval(() => {
-    shouldRunWeeklyDigest().then((due) => {
-      if (due) safe("generateWeeklyDigest", generateWeeklyDigest);
-    });
-  }, DIGEST_CHECK_MS).unref();
-
-  // One light pass shortly after boot so a freshly-started server doesn't
-  // wait a full interval before doing anything.
-  setTimeout(() => safe("checkForReplies", checkForReplies), 15000).unref();
-}
 
 connectDB()
   .then(() => runSeed())

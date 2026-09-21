@@ -7,6 +7,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { generateOutreachDraft } from "../services/llmService.js";
 import { sendApprovedEmail, emailIsConfigured } from "../services/emailService.js";
 import { notify } from "../services/notifyService.js";
+import { assertSendAllowed, quotaStatus } from "../services/sendQuotaService.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -19,8 +20,8 @@ router.get("/", async (req, res) => {
   res.json(items);
 });
 
-router.get("/config", (_req, res) => {
-  res.json({ emailConfigured: emailIsConfigured() });
+router.get("/config", async (_req, res) => {
+  res.json({ emailConfigured: emailIsConfigured(), quota: await quotaStatus() });
 });
 
 // AI-drafts a message for a lead using Claude. Lands as status="draft" —
@@ -74,6 +75,12 @@ router.post("/:id/send-email", async (req, res) => {
   if (msg.status !== "approved") return res.status(400).json({ error: "Only approved drafts can be sent" });
   if (msg.channel !== "email") return res.status(400).json({ error: "This endpoint only sends email drafts" });
   if (!msg.lead?.contactEmail) return res.status(400).json({ error: "Lead has no contact email on file" });
+
+  try {
+    await assertSendAllowed();
+  } catch (err) {
+    return res.status(err.statusCode || 429).json({ error: err.message, quota: err.quota });
+  }
 
   await sendApprovedEmail({ to: msg.lead.contactEmail, subject: msg.subject, text: msg.body, html: msg.body.replace(/\n/g, "<br/>") });
   msg.status = "sent";

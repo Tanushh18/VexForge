@@ -57,5 +57,15 @@ export const api = {
   scrapeJob: (id) => request(`/admin/scrape-jobs/${id}`),
   createScrapeJob: (body) => request("/admin/scrape-jobs", { method: "POST", body }),
 
+  models: () => request("/admin/models"),
+  jobs: () => request("/admin/jobs"),
+  runJob: (key) => request(`/admin/jobs/${key}/run`, { method: "POST" }),
+
+  pipelineSources: () => request("/pipeline/sources"),
+  pipelineStatus: () => request("/pipeline/status"),
+  pipelineRuns: () => request("/pipeline/runs"),
+  runPipeline: (body) => request("/pipeline/run", { method: "POST", body }),
+  rescoreLeads: (useModel = true) => request("/leads/rescore", { method: "POST", body: { useModel } }),
+
   digestLatest: () => request("/digest/latest"),
 };

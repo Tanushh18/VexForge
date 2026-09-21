@@ -3,6 +3,7 @@ import { useAuth } from "./AuthContext.jsx";
 import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Leads from "./pages/Leads.jsx";
+import Pipeline from "./pages/Pipeline.jsx";
 import Outreach from "./pages/Outreach.jsx";
 import Support from "./pages/Support.jsx";
 import Activity from "./pages/Activity.jsx";
@@ -19,6 +20,7 @@ function Shell() {
           <span className="name">Vex<span className="grad">Forge</span> HQ</span>
         </div>
         <NavLink to="/" end className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Dashboard</NavLink>
+        <NavLink to="/pipeline" className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Lead Pipeline</NavLink>
         <NavLink to="/crm" className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>CRM · Leads</NavLink>
         <NavLink to="/outreach" className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Outreach Queue</NavLink>
         <NavLink to="/support" className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Call & Support</NavLink>
@@ -32,6 +34,7 @@ function Shell() {
       <main className="main">
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/pipeline" element={<Pipeline />} />
           <Route path="/crm" element={<Leads />} />
           <Route path="/outreach" element={<Outreach />} />
           <Route path="/support" element={<Support />} />
