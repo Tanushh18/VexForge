@@ -443,9 +443,13 @@ h1{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-.025em
 </footer>
 
 <script>
-// Points at your local VexForge HQ server by default. When you deploy this
-// site for real, change API_BASE to your hosted server's URL.
-const API_BASE = window.VEXFORGE_API_BASE || "http://localhost:4000";
+// Local dev talks to the server on :4000. Anywhere else, stay same-origin and
+// let the host proxy /api through to the server (see the rewrite rules in
+// render.yaml) — that keeps the form working on a deployed static host
+// without baking a backend URL into the page. Override with
+// window.VEXFORGE_API_BASE if you host the two somewhere that can't proxy.
+const API_BASE =
+  window.VEXFORGE_API_BASE ?? (location.hostname === "localhost" ? "http://localhost:4000" : "");
 
 document.getElementById("contactForm").addEventListener("submit", async (e) => {
   e.preventDefault();

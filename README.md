@@ -418,6 +418,37 @@ than you send from). A Gmail app password works for both SMTP and IMAP.
   `MONGO_URI` at Atlas and `OLLAMA_URL` at wherever the models live. The `reasoning` model is the
   one that needs real RAM; everything else is comfortable on a modest instance.
 
+## Deploying to Render
+
+`render.yaml` in the repo root is a Blueprint for all three services: the API (Docker, since lead
+discovery drives a real Chromium), the HQ console, and the public marketing site. In Render:
+**New → Blueprint**, point it at this repo, and fill in the variables it asks for.
+
+Two pieces Render can't host, both wired as dashboard-entered variables:
+
+| Variable | Why it's external |
+|---|---|
+| `MONGO_URI` | Render has no managed MongoDB — use a free [Atlas](https://www.mongodb.com/atlas) cluster. Atlas blocks unknown IPs, so allowlist Render's outbound IPs (Service → Connect → Outbound). |
+| `OLLAMA_URL` | Render's standard instances are CPU-only, and a 14B model on CPU is far too slow to sit in a request path. Point this at a machine you control — your desktop behind a Cloudflare tunnel, or a GPU box. |
+
+**Without Ollama the app still runs.** Discovery, enrichment, dedupe and deterministic scoring all
+keep working; you lose drafting, the chatbot, and the model's ±15 scoring adjustment. **Admin ·
+System** shows which roles actually resolved, so you can tell "not running" from "not pulled".
+
+Three things worth knowing before you click deploy:
+
+- **The API is on Starter, not Free, deliberately.** Free instances spin down when idle, and a
+  spun-down instance runs no background jobs — no reply checking, no follow-up drafting, no
+  scheduled pipeline. A lead-gen system that only works while a tab is open isn't one.
+- **One manual step.** Both static sites proxy `/api/*` to the API by absolute URL, and Render only
+  knows that URL once the API exists. If your API lands on a hostname other than
+  `vexforge-api.onrender.com`, update the three `destination:` lines in `render.yaml` and redeploy
+  the static sites.
+- **`PIPELINE_SCHEDULE_ENABLED` ships as `false`.** Watch one manual run from the Lead Pipeline page
+  first, then flip it in the dashboard.
+
+`autoDeploy` is off for all three services — push doesn't redeploy until you say so.
+
 ## Security notes
 
 - `server/.env` is git-ignored — never commit real credentials. Only `server/.env.example`

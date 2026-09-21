@@ -21,7 +21,13 @@ import pipelineRoutes from "./routes/pipeline.js";
 
 const app = express();
 app.set("trust proxy", 1); // behind a tunnel/reverse proxy — needed for rate-limit to key on the real client IP
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
+// Hosting platforms hand out a bare hostname (Render's `fromService` host
+// property, for one), but the CORS origin has to carry a scheme or every
+// preflight quietly fails. Assume https for anything that arrives bare.
+const clientOrigin = (process.env.CLIENT_ORIGIN || "http://localhost:5173").trim();
+const CLIENT_ORIGIN = /^https?:\/\//.test(clientOrigin) ? clientOrigin : `https://${clientOrigin}`;
+
+app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json({ limit: "1mb" }));
 app.use(morgan("dev"));
 
