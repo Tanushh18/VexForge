@@ -1,0 +1,20 @@
+{
+  "name": "vexforge-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VexForge local worker — runs Playwright discovery, contact enrichment, scoring and drafting on your own machine, then delivers results to the deployed API.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "once": "node src/index.js --once",
+    "setup": "node src/setup.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.7",
+    "playwright": "^1.48.2"
+  }
+}

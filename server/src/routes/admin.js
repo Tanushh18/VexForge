@@ -4,10 +4,33 @@ import Lead from "../models/Lead.js";
 import Employee, { setAgentStatus } from "../models/Employee.js";
 import { logActivity } from "../models/ActivityLog.js";
 import { requireAuth } from "../middleware/auth.js";
-import { scrapeCompanyContactTiered } from "../services/scraperService.js";
+
+import { modelStatus, refreshModelHealth } from "../../../shared/modelRouter.js";
+import { jobStatus, runJobNow } from "../services/jobRegistry.js";
+import { scoreLead } from "../../../shared/scoring.js";
 
 const router = Router();
 router.use(requireAuth);
+
+// Which local models are actually pulled and which role each one is serving —
+// the fastest way to tell "the drafting model isn't downloaded" apart from
+// "Ollama isn't running" when a draft fails.
+router.get("/models", async (_req, res) => {
+  await refreshModelHealth();
+  res.json(modelStatus());
+});
+
+router.get("/jobs", (_req, res) => {
+  res.json(jobStatus());
+});
+
+router.post("/jobs/:key/run", async (req, res) => {
+  try {
+    res.json(await runJobNow(req.params.key));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
 
 router.get("/scrape-jobs", async (_req, res) => {
   const jobs = await ScrapeJob.find().sort({ createdAt: -1 }).limit(30).lean();
@@ -20,73 +43,26 @@ router.get("/scrape-jobs/:id", async (req, res) => {
   res.json(job);
 });
 
-// Kicks off a Playwright deep scan (falling back from the fast static pass)
-// and returns immediately with a job id — the scan itself runs in the
-// background and the Admin page polls GET /scrape-jobs/:id for its result.
+// Queues a Playwright deep scan for the local worker to pick up. Chromium
+// runs on the worker's machine, not here, so this only ever creates the
+// ticket — the Admin page polls GET /scrape-jobs/:id for the result, exactly
+// as it did when the scan ran in-process.
 router.post("/scrape-jobs", async (req, res) => {
   const { domain, companyName, industry } = req.body || {};
   if (!domain || !companyName) return res.status(400).json({ error: "domain and companyName are required" });
 
   const job = await ScrapeJob.create({ domain, companyName, industry, status: "queued" });
+  const agent = await Employee.findOne({ title: /Enrichment Agent/i });
+  if (agent) await setAgentStatus(agent._id, { status: "working", currentTask: `Queued a deep scan of ${domain}` });
+  await logActivity({
+    actor: agent?._id,
+    actorName: agent?.name || "Trace",
+    department: "Operations",
+    action: "Deep scan queued",
+    detail: `${companyName} (${domain})`,
+  });
+
   res.status(201).json(job);
-
-  runScrapeJob(job._id).catch((err) => console.error(`[scrape-job ${job._id}] unhandled error:`, err));
 });
-
-async function runScrapeJob(jobId) {
-  const job = await ScrapeJob.findById(jobId);
-  if (!job) return;
-
-  const agent = await Employee.findOne({ title: /Lead Scout/i });
-  job.status = "running";
-  job.startedAt = new Date();
-  await job.save();
-  if (agent) await setAgentStatus(agent._id, { status: "working", currentTask: `Deep-scanning ${job.domain} (Playwright)` });
-
-  try {
-    const result = await scrapeCompanyContactTiered(job.domain);
-    job.status = "done";
-    job.tier = result.tier;
-    job.result = { emails: result.emails, pagesOk: result.pagesOk, pagesTried: result.pagesTried };
-    job.finishedAt = new Date();
-
-    if (result.emails.length) {
-      const lead = await Lead.create({
-        companyName: job.companyName,
-        industry: job.industry || "Unknown",
-        website: result.website,
-        contactEmail: result.emails[0],
-        source: "website_scraper",
-        sourceNote: `Deep scan (${result.tier}) — found on: ${result.pagesOk.join(", ")}`,
-      });
-      job.leadId = lead._id;
-      await logActivity({
-        actor: agent?._id,
-        actorName: agent?.name || "Scout",
-        department: "Operations",
-        action: "Deep scan found contact",
-        detail: `${job.companyName} — ${result.emails.length} email(s) via ${result.tier} scan`,
-        entityType: "Lead",
-        entityId: lead._id,
-      });
-    } else {
-      await logActivity({
-        actor: agent?._id,
-        actorName: agent?.name || "Scout",
-        department: "Operations",
-        action: "Deep scan found nothing",
-        detail: `${job.companyName} (${job.domain})`,
-      });
-    }
-    await job.save();
-  } catch (err) {
-    job.status = "failed";
-    job.error = err.message;
-    job.finishedAt = new Date();
-    await job.save();
-  } finally {
-    if (agent) await setAgentStatus(agent._id, { status: "idle", currentTask: "Standing by", bumpCompleted: true });
-  }
-}
 
 export default router;

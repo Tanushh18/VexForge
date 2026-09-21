@@ -1,0 +1,7 @@
+{
+  "name": "vexforge-shared",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Dependency-free logic imported by both the deployed server and the local worker — model routing, lead scoring, outreach prompts.",
+  "type": "module"
+}

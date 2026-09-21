@@ -30,6 +30,11 @@ const employeeSchema = new Schema(
       default: "idle",
     },
     currentTask: { type: String, default: "Standing by" },
+    // Which local model class this agent's work runs on — `reasoning` for
+    // decisions, `drafting` for writing, `fast` for classification, `none`
+    // for agents whose work is pure database bookkeeping. Documents the
+    // routing the backend actually performs so the org chart isn't fiction.
+    modelRole: { type: String, enum: ["reasoning", "drafting", "fast", "none"], default: "fast" },
     skills: [{ type: String }],
     tasksCompleted: { type: Number, default: 0 },
     lastActive: { type: Date, default: Date.now },

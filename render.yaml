@@ -1,0 +1,197 @@
+# VexForge HQ — Render blueprint.
+#
+# Three services: the API (Docker), the HQ console, and the marketing site.
+# The crawler is NOT here — it runs locally, see worker/.
+#
+# TWO THINGS RENDER CANNOT HOST FOR YOU, both wired as `sync: false` env vars
+# you fill in once in the dashboard:
+#
+#   MONGO_URI  — Render has no managed MongoDB. Use a free MongoDB Atlas
+#                cluster. Atlas blocks unknown IPs by default, so allowlist
+#                Render's outbound IPs (Service → Connect → Outbound) or
+#                0.0.0.0/0 if you're comfortable relying on the connection
+#                string alone.
+#   OLLAMA_URL — Render's standard instances are CPU-only, and a 14B model on
+#                CPU is far too slow to sit in a request path. Point this at a
+#                machine you control that runs Ollama (your desktop behind a
+#                Cloudflare tunnel, or a GPU box). The app degrades cleanly
+#                without it: discovery, enrichment, dedupe and deterministic
+#                scoring all keep working — you lose drafting, the chatbot, and
+#                the model's ±15 scoring adjustment. Admin · System shows which
+#                roles actually resolved.
+#
+# ARCHITECTURE: this deploys the API and both static sites. It does NOT deploy
+# the crawler. Playwright drives a real Chromium (~730MB resident), which would
+# force a 2GB instance for a process that otherwise idles at ~140MB — so
+# discovery and deep scans run in worker/ on your own machine and deliver their
+# results here over HTTP. See worker/README.md.
+#
+# That also means Playwright never needed tunnelling: it is an in-process
+# library, not a service. Ollama IS a service, so the API reaches it over your
+# tunnel via OLLAMA_URL for chat, follow-ups and digests, while the worker uses
+# its own localhost Ollama for drafting during a run.
+#
+# The static sites proxy /api/* through to the API, which keeps the browser
+# same-origin and sidesteps CORS. Render only knows the API's URL once it
+# exists, so if yours lands on a hostname other than vexforge-api.onrender.com,
+# update the `destination:` lines below and redeploy the static sites.
+#
+# Cheaper variant: run the API locally too, so nothing is deployed but the two
+# static sites. Delete the vexforge-api service and instead set
+# VITE_API_BASE_URL on the console, window.VEXFORGE_API_BASE in
+# website/config.js, and a comma-separated CLIENT_ORIGIN in your local .env.
+
+services:
+  # --- API + background jobs ------------------------------------------------
+  - type: web
+    name: vexforge-api
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: .
+    region: singapore # closest region to Delhi
+    # Starter (512MB), which is the right size as long as discovery runs on
+    # your own machine rather than here. Measured on this codebase: the Node
+    # process sits at ~140MB idle, so 512MB is roomy — but a Playwright run
+    # adds ~600-730MB of Chromium processes on top (it's multi-process; that
+    # figure is the whole tree), which OOM-kills a 512MB instance and takes
+    # the API down with it.
+    #
+    # So: keep `starter` while you trigger pipeline runs locally against the
+    # same Atlas cluster. Move to `standard` (2GB) only when you set
+    # PIPELINE_SCHEDULE_ENABLED=true and want the crawl running unattended.
+    #
+    # Not `free`: free instances spin down when idle, and a spun-down instance
+    # runs no background jobs — no reply checking, no follow-up drafting, no
+    # scheduled pipeline. Those jobs are the entire reason to deploy this.
+    plan: starter
+    healthCheckPath: /api/health
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # --- Required: fill these in the dashboard ---
+      - key: MONGO_URI
+        sync: false
+      - key: CEO_EMAIL
+        sync: false
+      - key: CEO_PASSWORD
+        sync: false
+      - key: CEO_NAME
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true # Render generates a long random value once
+
+      # Shared secret the local worker authenticates with. Generate with:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      # and put the same value in worker/.env. Until it's set, the worker
+      # endpoints fail closed with 503 — an unset key must never mean
+      # "anyone may post leads into the CRM".
+      - key: WORKER_API_KEY
+        generateValue: true
+
+      # CORS: the HQ console's own origin, resolved from the service below.
+      - key: CLIENT_ORIGIN
+        fromService:
+          type: web
+          name: vexforge-hq
+          property: host
+
+      # --- Local models ---
+      # Your Ollama host — see the note at the top of this file.
+      - key: OLLAMA_URL
+        sync: false
+      - key: LLM_BACKEND
+        value: auto
+      - key: OLLAMA_MODEL_REASONING
+        value: qwen2.5:14b-instruct
+      - key: OLLAMA_MODEL_DRAFTING
+        value: qwen2.5:7b-instruct
+      - key: OLLAMA_MODEL_FAST
+        value: qwen2.5:3b-instruct
+
+      # --- Lead pipeline ---
+      - key: DAILY_SEND_CAP
+        value: 25
+      - key: PIPELINE_PER_SOURCE
+        value: 12
+      - key: PIPELINE_AUTO_DRAFT_TOP
+        value: 5
+      - key: PIPELINE_MIN_DRAFT_SCORE
+        value: 60
+      # Off until you've watched a manual run from the Lead Pipeline page and
+      # are happy with what it finds. Flip to true in the dashboard.
+      - key: PIPELINE_SCHEDULE_ENABLED
+        value: false
+      - key: PIPELINE_EVERY_HOURS
+        value: 24
+      - key: FOLLOWUP_AFTER_DAYS
+        value: 4
+
+      # --- Optional: outbound email (nothing sends without these) ---
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM_NAME
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        sync: false
+
+      # --- Optional: reply detection (IMAP) ---
+      - key: IMAP_HOST
+        sync: false
+      - key: IMAP_PORT
+        sync: false
+      - key: IMAP_USER
+        sync: false
+      - key: IMAP_PASS
+        sync: false
+
+      # --- Optional: Telegram push notifications ---
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+
+  # --- HQ console (React SPA) ----------------------------------------------
+  - type: web
+    name: vexforge-hq
+    runtime: static
+    rootDir: client
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    autoDeploy: false
+    headers:
+      # The console is a private admin tool — keep it out of search results.
+      - path: /*
+        name: X-Robots-Tag
+        value: noindex
+    routes:
+      # Proxy the API through this origin. The client calls a relative /api,
+      # so this keeps it same-origin in the browser and sidesteps CORS and
+      # third-party-cookie behaviour entirely.
+      - type: rewrite
+        source: /api/*
+        destination: https://vexforge-api.onrender.com/api/*
+      # SPA fallback — react-router owns every other path, and without this a
+      # refresh on /pipeline would 404 against the static host.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # --- Public marketing site -----------------------------------------------
+  - type: web
+    name: vexforge-site
+    runtime: static
+    staticPublishPath: ./website
+    autoDeploy: false
+    routes:
+      # The contact form posts to /api/public/contact on this same origin.
+      - type: rewrite
+        source: /api/*
+        destination: https://vexforge-api.onrender.com/api/*
