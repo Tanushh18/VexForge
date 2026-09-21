@@ -56,14 +56,15 @@ services:
     # figure is the whole tree), which OOM-kills a 512MB instance and takes
     # the API down with it.
     #
-    # So: keep `starter` while you trigger pipeline runs locally against the
-    # same Atlas cluster. Move to `standard` (2GB) only when you set
-    # PIPELINE_SCHEDULE_ENABLED=true and want the crawl running unattended.
-    #
-    # Not `free`: free instances spin down when idle, and a spun-down instance
-    # runs no background jobs — no reply checking, no follow-up drafting, no
-    # scheduled pipeline. Those jobs are the entire reason to deploy this.
-    plan: starter
+    # Free tier, by choice: no card on file. The tradeoff is real — a free
+    # instance spins down after ~15min idle, and a spun-down instance runs
+    # no background jobs (no reply checking, no follow-up drafting, no
+    # scheduled pipeline) until the next request wakes it back up. Trigger
+    # pipeline runs locally against the same Atlas cluster in the meantime.
+    # Move to `starter` (512MB, always-on) once you want those jobs running
+    # unattended, and `standard` (2GB) only if PIPELINE_SCHEDULE_ENABLED=true
+    # runs the crawl here instead of on the local worker.
+    plan: free
     healthCheckPath: /api/health
     autoDeploy: false
     envVars:
