@@ -5,3 +5,7 @@ build/
 *.log
 .DS_Store
 .runtime/
+
+# Ollama models + Playwright browser binaries — multi-GB, machine-local only,
+# never belong in the repo. Reinstalled via `ollama pull` / `playwright install`.
+.local/

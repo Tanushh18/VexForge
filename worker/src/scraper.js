@@ -39,7 +39,13 @@ export function isPrivateIp(ip) {
 
 async function assertPublicHost(hostname) {
   if (hostname === "localhost") throw new Error(`Refusing to scan "${hostname}" — not a public host`);
-  const records = await dns.lookup(hostname, { all: true }).catch(() => []);
+  // dns.lookup() has no built-in timeout and can hang far longer than any
+  // HTTP client timeout on a bad resolver path — bound it explicitly so one
+  // unresolvable domain can't stall the whole enrichment loop.
+  const records = await Promise.race([
+    dns.lookup(hostname, { all: true }).catch(() => []),
+    new Promise((resolve) => setTimeout(() => resolve([]), 5000)),
+  ]);
   if (!records.length) throw new Error(`Could not resolve "${hostname}"`);
   if (records.some((r) => isPrivateIp(r.address))) {
     throw new Error(`Refusing to scan "${hostname}" — resolves to a private/internal address`);

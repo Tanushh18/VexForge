@@ -5,8 +5,8 @@ import { useAuth } from "../AuthContext.jsx";
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("yashasvi@vexforge.dev");
-  const [password, setPassword] = useState("hrJpGMMmskiEVfGss25X2dAU");
+  const [email, setEmail] = useState("yashasvi.indora@gmail.com");
+  const [password, setPassword] = useState("29f24bdf0e1d");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
