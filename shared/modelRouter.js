@@ -12,8 +12,20 @@
 // service is still supported as a backend so existing setups keep working;
 // `LLM_BACKEND=auto` (the default) prefers Ollama and falls back to it.
 
-const OLLAMA_URL = (process.env.OLLAMA_URL || "http://localhost:11434").replace(/\/$/, "");
+const ENV_OLLAMA_URL = (process.env.OLLAMA_URL || "http://localhost:11434").replace(/\/$/, "");
 const LOCAL_LLM_URL = (process.env.LOCAL_LLM_URL || "http://localhost:5001").replace(/\/$/, "");
+
+// Deployed instances have no local Ollama — the CEO can point this at a
+// tunnel to their own machine from the Admin page instead of redeploying
+// with a new env var. The override lives in memory only; the server loads it
+// from the DB at startup and after every save (see routes/admin.js).
+let ollamaUrlOverride = null;
+export function setOllamaUrlOverride(url) {
+  ollamaUrlOverride = url ? url.trim().replace(/\/$/, "") : null;
+}
+export function getOllamaUrl() {
+  return ollamaUrlOverride || ENV_OLLAMA_URL;
+}
 const BACKEND = process.env.LLM_BACKEND || "auto"; // auto | ollama | localllm
 
 export const ROLES = ["reasoning", "drafting", "fast"];
@@ -42,7 +54,7 @@ const state = {
 
 async function probeOllama() {
   try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${getOllamaUrl()}/api/tags`, { signal: AbortSignal.timeout(3000) });
     if (!res.ok) return false;
     const data = await res.json();
     state.installed = (data.models || []).map((m) => m.name);
@@ -105,7 +117,7 @@ export function resolveRole(role) {
 export function modelStatus() {
   return {
     backend: state.backend,
-    ollamaUrl: OLLAMA_URL,
+    ollamaUrl: getOllamaUrl(),
     localLlmUrl: LOCAL_LLM_URL,
     lastCheck: state.lastCheck,
     installed: state.installed,
@@ -119,7 +131,7 @@ export function modelStatus() {
 }
 
 async function ollamaChat({ model, system, prompt, json, timeoutMs, temperature }) {
-  const res = await fetch(`${OLLAMA_URL}/api/chat`, {
+  const res = await fetch(`${getOllamaUrl()}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

@@ -11,6 +11,10 @@ export default function Admin() {
   const [form, setForm] = useState({ companyName: "", domain: "", industry: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [ollamaUrlInput, setOllamaUrlInput] = useState("");
+  const [ollamaSaved, setOllamaSaved] = useState("");
+  const [ollamaBusy, setOllamaBusy] = useState(false);
+  const [ollamaError, setOllamaError] = useState("");
 
   async function load() {
     setJobs(await api.scrapeJobs());
@@ -19,14 +23,34 @@ export default function Admin() {
   // Model and background-job state change on their own schedule, not with the
   // scan-job poll, so they load separately and refresh far less often.
   async function loadSystem() {
-    const [m, j, p] = await Promise.all([
+    const [m, j, p, s] = await Promise.all([
       api.models().catch(() => null),
       api.jobs().catch(() => []),
       api.pipelineStatus().catch(() => null),
+      api.settings().catch(() => null),
     ]);
     setModels(m);
     setBgJobs(j);
     setWorker(p?.worker || null);
+    if (s) {
+      setOllamaSaved(s.ollamaUrl || "");
+      setOllamaUrlInput((current) => (current ? current : s.ollamaUrl || ""));
+    }
+  }
+
+  async function saveOllamaUrl(e) {
+    e.preventDefault();
+    setOllamaBusy(true);
+    setOllamaError("");
+    try {
+      const res = await api.updateSettings({ ollamaUrl: ollamaUrlInput.trim() });
+      setOllamaSaved(res.ollamaUrl || "");
+      setModels(res.models);
+    } catch (err) {
+      setOllamaError(err.message);
+    } finally {
+      setOllamaBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -90,6 +114,32 @@ export default function Admin() {
             </tbody>
           </table>
         )}
+
+        <form onSubmit={saveOllamaUrl} style={{ marginTop: 14, borderTop: "1px solid var(--border, #2a2a2a)", paddingTop: 14 }}>
+          <div className="field">
+            <label>Ollama tunnel URL</label>
+            <div className="hint" style={{ marginBottom: 6 }}>
+              Deployed instances have no local Ollama. Point this at a tunnel to your own machine (e.g.{" "}
+              <code>cloudflared tunnel --url http://localhost:11434</code>) instead of redeploying with a new
+              env var. Leave blank to fall back to <code>OLLAMA_URL</code>.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                style={{ flex: 1 }}
+                placeholder="https://your-tunnel.trycloudflare.com"
+                value={ollamaUrlInput}
+                onChange={(e) => setOllamaUrlInput(e.target.value)}
+              />
+              <button className="btn btn-sm" disabled={ollamaBusy}>
+                {ollamaBusy ? "Saving…" : "Save"}
+              </button>
+            </div>
+            {ollamaError && <div className="error-box" style={{ marginTop: 8 }}>{ollamaError}</div>}
+            {ollamaSaved && !ollamaError && (
+              <div className="hint" style={{ marginTop: 8 }}>Currently using: {ollamaSaved}</div>
+            )}
+          </div>
+        </form>
       </div>
 
       <div className="panel" style={{ marginBottom: 20 }}>

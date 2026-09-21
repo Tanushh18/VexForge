@@ -7,6 +7,8 @@ import { connectDB } from "./config/db.js";
 import { parseAllowedOrigins, originChecker } from "./config/origins.js";
 import { runSeed } from "./services/seed.js";
 import { startBackgroundJobs } from "./services/jobRegistry.js";
+import { getSettings } from "./models/Settings.js";
+import { setOllamaUrlOverride, refreshModelHealth } from "../../shared/modelRouter.js";
 
 import authRoutes from "./routes/auth.js";
 import employeeRoutes from "./routes/employees.js";
@@ -35,6 +37,13 @@ const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHe
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, company: "VexForge HQ" }));
 
+// A dedicated, unauthenticated, zero-DB-touch route for uptime crons (e.g.
+// cron-job.org, GitHub Actions) that just need to stop the free Render
+// instance from spinning down — /api/health works too, but this name makes
+// the intent explicit and keeps health checks and keep-alive pings separable
+// if they ever need to diverge.
+app.get("/api/ping", (_req, res) => res.status(200).send("pong"));
+
 // Open CORS just for the public contact-form endpoint, since the marketing
 // site in /website is a static file that may be hosted anywhere.
 app.use("/api/public", cors(), publicRoutes);
@@ -60,6 +69,13 @@ const PORT = process.env.PORT || 4000;
 
 connectDB()
   .then(() => runSeed())
+  .then(async () => {
+    const { ollamaUrl } = await getSettings();
+    if (ollamaUrl) {
+      setOllamaUrlOverride(ollamaUrl);
+      await refreshModelHealth();
+    }
+  })
   .then(() => {
     app.listen(PORT, () => console.log(`[vexforge-hq] server listening on :${PORT}`));
     startBackgroundJobs();

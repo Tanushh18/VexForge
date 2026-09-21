@@ -5,9 +5,10 @@ import Employee, { setAgentStatus } from "../models/Employee.js";
 import { logActivity } from "../models/ActivityLog.js";
 import { requireAuth } from "../middleware/auth.js";
 
-import { modelStatus, refreshModelHealth } from "../../../shared/modelRouter.js";
+import { modelStatus, refreshModelHealth, setOllamaUrlOverride } from "../../../shared/modelRouter.js";
 import { jobStatus, runJobNow } from "../services/jobRegistry.js";
 import { scoreLead } from "../../../shared/scoring.js";
+import { getSettings, updateSettings } from "../models/Settings.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -18,6 +19,25 @@ router.use(requireAuth);
 router.get("/models", async (_req, res) => {
   await refreshModelHealth();
   res.json(modelStatus());
+});
+
+// Runtime settings that shouldn't need a redeploy to change. Today just the
+// Ollama tunnel URL: a deployed instance has no local Ollama, so the CEO
+// points this at a tunnel to their own machine (see worker/README.md and the
+// Admin page) instead of waiting on an env var + redeploy.
+router.get("/settings", async (_req, res) => {
+  res.json(await getSettings());
+});
+
+router.patch("/settings", async (req, res) => {
+  const { ollamaUrl } = req.body || {};
+  if (ollamaUrl !== undefined && ollamaUrl !== "" && !/^https?:\/\//i.test(ollamaUrl)) {
+    return res.status(400).json({ error: "ollamaUrl must start with http:// or https://" });
+  }
+  const saved = await updateSettings({ ollamaUrl: ollamaUrl ?? "" });
+  setOllamaUrlOverride(saved.ollamaUrl);
+  await refreshModelHealth();
+  res.json({ ...saved, models: modelStatus() });
 });
 
 router.get("/jobs", (_req, res) => {
