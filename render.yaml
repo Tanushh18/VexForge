@@ -33,11 +33,22 @@ services:
     dockerfilePath: ./server/Dockerfile
     dockerContext: ./server
     region: singapore # closest region to Delhi
-    # Starter, not Free, on purpose: free instances spin down when idle, and a
-    # spun-down instance runs no background jobs — no reply checking, no
-    # follow-up drafting, no scheduled pipeline. A lead-gen system that only
-    # works while someone has the tab open isn't one.
-    plan: starter
+    # Standard (2GB), for two independent reasons:
+    #
+    #   Memory — measured on this codebase: the Node process sits at ~140MB
+    #   idle, and a Playwright run adds ~600-730MB of Chromium processes on
+    #   top (the browser is multi-process; that figure is the whole tree).
+    #   512MB plans OOM-kill the instance the moment a pipeline run launches
+    #   the browser, and a killed instance takes the API down with it.
+    #
+    #   Uptime — free instances spin down when idle, and a spun-down instance
+    #   runs no background jobs: no reply checking, no follow-up drafting, no
+    #   scheduled pipeline. A lead-gen system that only works while someone
+    #   has the tab open isn't one.
+    #
+    # If you never run discovery or deep scans on this box, 512MB is fine —
+    # everything except Chromium fits comfortably.
+    plan: standard
     healthCheckPath: /api/health
     autoDeploy: false
     envVars:

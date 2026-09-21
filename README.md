@@ -418,6 +418,53 @@ than you send from). A Gmail app password works for both SMTP and IMAP.
   `MONGO_URI` at Atlas and `OLLAMA_URL` at wherever the models live. The `reasoning` model is the
   one that needs real RAM; everything else is comfortable on a modest instance.
 
+## What fits where (memory)
+
+The pieces of this project have wildly different footprints, and only some of them can share a box.
+Measured on this codebase; model figures are Ollama's default Q4_K_M quantization.
+
+| Component | RAM | Where it can live |
+|---|---|---|
+| React console (`client/`) | none at runtime | any static host — it's just files |
+| Marketing site (`website/`) | none at runtime | any static host |
+| Node API, idle | **~140 MB** | a 512MB instance, comfortably |
+| **+ Playwright Chromium** during a run | **+600–730 MB** | needs ~1GB free; this is the spike that decides your plan |
+| MongoDB | not your RAM | Atlas free tier (512MB *storage*) |
+| `qwen2.5:3b-instruct` (`fast`) | ~2 GB | a laptop, easily |
+| `qwen2.5:7b-instruct` (`drafting`) | ~5 GB | 16GB machine, fine |
+| `qwen2.5:14b-instruct` (`reasoning`) | ~9 GB | 16GB machine, tight; 32GB comfortable |
+
+### The trap: Ollama keeps all three models loaded
+
+Ollama holds up to three models resident at once by default and only evicts them after ~5 minutes
+idle. This app uses all three roles, so a single pipeline run touches all three back to back — and
+you can end up with **~16GB of models resident simultaneously**, on top of everything else. On a
+16GB machine that means swapping, and swapping a 9GB model is indistinguishable from a hang.
+
+Two ways out, depending on the machine:
+
+```bash
+# 32GB+ : leave it — keeping models warm is exactly what you want
+# 16GB  : one model at a time. Slower (a role switch reloads from disk), never swaps.
+OLLAMA_MAX_LOADED_MODELS=1
+
+# <16GB : collapse all three roles onto one model — no reloads, no eviction
+OLLAMA_MODEL_ALL=qwen2.5:7b-instruct
+```
+
+### Deployable as-is vs. not
+
+- **Deploy anywhere:** both static sites, and the Node API — it's a plain Express process.
+- **Deploy with room to breathe:** the API *including* discovery and deep scans. Budget ~1GB;
+  Chromium is the whole reason.
+- **Don't deploy to a normal cloud instance:** the models. A 14B model on a CPU-only box isn't
+  memory-bound so much as unusably slow — seconds per token. Keep Ollama on hardware you control
+  and point `OLLAMA_URL` at it.
+
+Splitting is a legitimate answer: static sites on a free host, the API on a small instance, and
+Ollama on your own machine behind a tunnel. The router degrades cleanly when the models are
+unreachable, so the split never takes the app down — it just narrows what it can do.
+
 ## Deploying to Render
 
 `render.yaml` in the repo root is a Blueprint for all three services: the API (Docker, since lead
