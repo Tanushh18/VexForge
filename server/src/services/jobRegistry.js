@@ -1,7 +1,7 @@
 import { checkForReplies } from "./inboxService.js";
 import { runFollowUpCheck } from "./followUpService.js";
 import { generateWeeklyDigest, shouldRunWeeklyDigest } from "./digestService.js";
-import { runScheduledPipeline } from "./pipelineService.js";
+import { enqueueScheduledRun } from "./pipelineQueue.js";
 
 // One declared list of every recurring job, with its schedule and its last
 // outcome. Previously these were loose setInterval calls in index.js, which
@@ -37,12 +37,12 @@ export const JOBS = [
   },
   {
     key: "leadPipeline",
-    label: "Lead discovery pipeline",
+    label: "Lead discovery pipeline (queues a job for the worker)",
     everyMs: Number(process.env.PIPELINE_EVERY_HOURS || 24) * HOUR,
     // Off unless explicitly enabled: an unattended crawler that starts itself
     // the first time you run `npm run dev` is not a good default.
     enabled: () => process.env.PIPELINE_SCHEDULE_ENABLED === "true",
-    run: runScheduledPipeline,
+    run: enqueueScheduledRun,
   },
 ];
 

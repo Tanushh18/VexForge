@@ -7,6 +7,7 @@ export default function Admin() {
   const [jobs, setJobs] = useState([]);
   const [models, setModels] = useState(null);
   const [bgJobs, setBgJobs] = useState([]);
+  const [worker, setWorker] = useState(null);
   const [form, setForm] = useState({ companyName: "", domain: "", industry: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -18,9 +19,14 @@ export default function Admin() {
   // Model and background-job state change on their own schedule, not with the
   // scan-job poll, so they load separately and refresh far less often.
   async function loadSystem() {
-    const [m, j] = await Promise.all([api.models().catch(() => null), api.jobs().catch(() => [])]);
+    const [m, j, p] = await Promise.all([
+      api.models().catch(() => null),
+      api.jobs().catch(() => []),
+      api.pipelineStatus().catch(() => null),
+    ]);
     setModels(m);
     setBgJobs(j);
+    setWorker(p?.worker || null);
   }
 
   useEffect(() => {
@@ -107,7 +113,18 @@ export default function Admin() {
         </table>
       </div>
 
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>Deep contact scan</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <span style={{ fontWeight: 600 }}>Deep contact scan</span>
+        <span className={`pill pill-${worker?.anyOnline ? "done" : "failed"}`}>
+          {worker?.anyOnline ? "worker online" : "no worker connected"}
+        </span>
+      </div>
+      {!worker?.anyOnline && (
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Chromium runs on your machine, not here — a scan queued now will sit until the worker starts
+          (<code>cd worker &amp;&amp; npm start</code>).
+        </div>
+      )}
 
       <form className="panel" onSubmit={runScan} style={{ marginBottom: 20 }}>
         <div className="row">

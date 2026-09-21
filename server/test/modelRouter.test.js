@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseJsonLoose, ROLES, MODELS } from "../src/services/modelRouter.js";
+import { parseJsonLoose, ROLES, MODELS } from "../../shared/modelRouter.js";
 import { startOfDay, DAILY_SEND_CAP } from "../src/services/sendQuotaService.js";
 
 test("parseJsonLoose reads clean JSON", () => {

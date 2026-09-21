@@ -1,5 +1,9 @@
 import { complete, completeJson } from "./modelRouter.js";
 
+// Shared by the deployed server and the local worker. Kept dependency-free on
+// purpose: both sides import it by relative path, so anything it pulled in
+// would have to exist in two package.json files that can drift apart.
+
 // Ranks leads so a ~25-sends-a-day budget goes to the prospects most likely to
 // convert. Two layers, deliberately in this order:
 //

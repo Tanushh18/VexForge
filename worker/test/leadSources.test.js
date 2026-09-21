@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseLaunchTitle, isUsableCompanyUrl } from "../src/services/leadSources/hnLaunches.js";
-import { pickProductLinks, slugToName } from "../src/services/leadSources/productHunt.js";
-import { pickCompanySlugs, directoryUrl } from "../src/services/leadSources/ycDirectory.js";
-import { cleanOutboundUrl, isPlatformDomain } from "../src/services/leadSources/browser.js";
+import { parseLaunchTitle, isUsableCompanyUrl } from "../src/leadSources/hnLaunches.js";
+import { pickProductLinks, slugToName } from "../src/leadSources/productHunt.js";
+import { pickCompanySlugs, directoryUrl } from "../src/leadSources/ycDirectory.js";
+import { cleanOutboundUrl, isPlatformDomain } from "../src/leadSources/browser.js";
 
 test("parseLaunchTitle pulls the company name out of a Launch HN title", () => {
   const { name, description } = parseLaunchTitle("Launch HN: Acme — AI scheduling for dentists");

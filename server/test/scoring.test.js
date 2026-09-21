@@ -7,7 +7,7 @@ import {
   applyAdjustment,
   MAX_MODEL_ADJUSTMENT,
   SIGNAL_WEIGHTS,
-} from "../src/services/scoringService.js";
+} from "../../shared/scoring.js";
 
 test("detectSignals flags a reachable lead", () => {
   const signals = detectSignals({ companyName: "Acme", website: "acme.example", contactEmail: "hi@acme.example", contactName: "Dana" });

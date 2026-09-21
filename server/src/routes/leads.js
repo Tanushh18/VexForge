@@ -3,9 +3,9 @@ import Lead from "../models/Lead.js";
 import Employee, { setAgentStatus } from "../models/Employee.js";
 import { logActivity } from "../models/ActivityLog.js";
 import { requireAuth } from "../middleware/auth.js";
-import { scrapeCompanyContact } from "../services/scraperService.js";
+import { scrapeCompanyContact } from "../services/contactScraper.js";
 import { findDuplicateLead, escapeRegex, normalizeDomain } from "../services/leadRepository.js";
-import { scoreLead, scoreLeadWithModel } from "../services/scoringService.js";
+import { scoreLead, scoreLeadWithModel } from "../../../shared/scoring.js";
 
 const router = Router();
 router.use(requireAuth);

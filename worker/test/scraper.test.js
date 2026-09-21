@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extractEmails, isPrivateIp } from "../src/services/scraperService.js";
+import { extractEmails, isPrivateIp } from "../src/scraper.js";
 
 test("extractEmails finds mailto links", () => {
   const html = `<a href="mailto:hello@acme.example?subject=hi">Email us</a>`;

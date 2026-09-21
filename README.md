@@ -7,6 +7,40 @@ cap, a call/feedback ticket system, a full activity log, and a voice-enabled cha
 Head Manager) you command in plain English. Includes the public marketing site with a working
 contact form wired into the CRM.
 
+## Architecture: two processes
+
+VexForge runs as **two** processes, not one, and the split is forced by memory:
+
+```
+  YOUR MACHINE                           DEPLOYED (512MB is plenty)
+  ┌───────────────────────┐              ┌──────────────────────────┐
+  │ worker/               │  poll ──────►│ server/  ~140MB idle     │
+  │  • Playwright ~730MB  │              │  • CRM, dedupe, storage  │
+  │  • discovery          │  leads ─────►│  • approval queue        │
+  │  • contact enrichment │  progress ──►│  • sending (daily cap)   │
+  │  • scoring            │              │  • reply detection       │
+  │  • drafting           │              │  • follow-ups, digests   │
+  │ Ollama 2-16GB         │◄── tunnel ───│  • chat (needs a model)  │
+  └───────────────────────┘              └──────────────────────────┘
+                                          client/ + website/ (static)
+```
+
+**Why Playwright can't be tunnelled.** Ollama is an HTTP service, so the
+deployed server reaches it over a tunnel with one env var. Playwright is an
+*in-process library* — there's no port to point at — so whatever drives the
+browser has to live where the browser is. That's the worker.
+
+The worker never touches the database. It posts leads to the API, which owns
+dedupe: a second implementation of that rule is exactly how the same company
+ends up in the CRM twice. It also **can't send anything** — the approval gate
+and the send cap are both server-side, behind an auth the worker doesn't hold.
+
+One upside of drafting on the worker: Ollama is on *localhost* there, so
+drafts can't silently go missing the way they would if the server had to reach
+a model across a tunnel that happened to be down.
+
+See **[worker/README.md](worker/README.md)** to run it.
+
 ## The lead pipeline
 
 This is the part that finds you clients. One run, five stages:
@@ -16,22 +50,27 @@ This is the part that finds you clients. One run, five stages:
                 • Hacker News launches   (official Algolia API, no browser)
                 • Product Hunt           (Playwright — the listing is client-rendered)
                 • Y Combinator directory (Playwright — funded, filtered to "is hiring")
-2. Dedupe     against the existing CRM, by company name or website domain
-3. Enrich     find a contact email on the company's OWN site (static pass, then a
+2. Enrich     find a contact email on the company's OWN site (static pass, then a
               headless browser only if that comes back empty)
-4. Score      deterministic signal weights, then a ±15 adjustment from the local
-              reasoning model — see server/src/services/scoringService.js
-5. Draft      queue outreach for the top N scoring leads that actually have an email
+3. Score      deterministic signal weights, then a ±15 adjustment from the local
+              reasoning model — see shared/scoring.js
+4. Draft      outreach for the top N scoring leads that actually have an email
+5. Deliver    POST to the API, which dedupes against the CRM and stores
 ```
 
-**The pipeline stops at `draft`.** Nothing in it can send anything. Every message still passes
-the approval gate you already had, and the send path is now capped at `DAILY_SEND_CAP` (25/day by
-default) — a new sending domain that fires a hundred cold emails in an afternoon gets classified
-as spam, and that reputation then follows every later message.
+Stages 1-4 run on the worker; stage 5 is where the deployed side takes over.
 
-Run it from the **Lead Pipeline** page, or set `PIPELINE_SCHEDULE_ENABLED=true` to run it daily.
-Scheduling is off by default: an unattended crawler that starts itself the first time you run
-`npm run dev` is not a good default.
+**The pipeline stops at `draft`.** Nothing in it can send. Every message still
+passes the approval gate, and the send path is capped at `DAILY_SEND_CAP`
+(25/day by default) — a new sending domain that fires a hundred cold emails in
+an afternoon gets classified as spam, and that reputation then follows every
+later message.
+
+Click **Start run** on the Lead Pipeline page and the job is queued; the worker
+picks it up on its next poll and reports progress as it goes, so the page shows
+the live stage and the company being worked on rather than a blank several
+minutes. If no worker is online the page says exactly that, instead of leaving
+a job to look mysteriously stuck.
 
 ### Scoring
 
@@ -166,23 +205,36 @@ VexForge-Automation/
 │   │   ├── services/        API client wrappers
 │   │   └── AuthContext.jsx
 │   └── vite.config.js
-├── server/                  Express backend
+├── shared/                  Imported by BOTH server and worker — no dependencies
+│   ├── modelRouter.js       role → local model routing (the only place a model is named)
+│   ├── scoring.js           deterministic signal weights + the clamped model adjustment
+│   └── outreach.js          the draft prompts
+├── worker/                  LOCAL ONLY — the half that needs a browser and a GPU
+│   ├── src/
+│   │   ├── index.js         poll loop (`npm start`) / one-shot (`npm run once`)
+│   │   ├── apiClient.js     talks to the deployed API with a worker key
+│   │   ├── pipeline.js      the run: discover → enrich → score → draft → deliver
+│   │   ├── leadSources/     one module per discovery source
+│   │   └── scraper.js       contact lookup, static pass then browser fallback
+│   └── .env.example
+├── server/                  Express backend — deployed, no Playwright
 │   ├── src/
 │   │   ├── routes/          auth, employees, leads, outreach, tickets, activity, chat, public, admin, digest, pipeline
 │   │   ├── models/          Employee, Lead, OutreachMessage, Ticket, ActivityLog, ChatMessage, ScrapeJob, Digest, PipelineRun
 │   │   ├── services/
-│   │   │   ├── modelRouter.js      role → local model routing (the only place a model is named)
-│   │   │   ├── pipelineService.js  the end-to-end run: discover → dedupe → enrich → score → draft
-│   │   │   ├── scoringService.js   deterministic signal weights + the clamped model adjustment
-│   │   │   ├── leadSources/        one module per discovery source
-│   │   │   ├── leadRepository.js   lead identity + dedupe, shared by every create path
-│   │   │   ├── sendQuotaService.js the daily send cap
-│   │   │   ├── jobRegistry.js      every recurring job, its schedule, and its last outcome
-│   │   │   └── llmService, emailService, scraperService, notifyService, inboxService,
+│   │   │   ├── pipelineQueue.js     queues runs for the worker to claim
+│   │   │   ├── leadIngestService.js takes the worker's leads, dedupes, stores
+│   │   │   ├── workerRegistry.js    which workers have checked in recently
+│   │   │   ├── contactScraper.js    the static-only tier (no Playwright here)
+│   │   │   ├── leadRepository.js    lead identity + dedupe, shared by every create path
+│   │   │   ├── sendQuotaService.js  the daily send cap
+│   │   │   ├── jobRegistry.js       every recurring job, its schedule, and its last outcome
+│   │   │   └── llmService, emailService, notifyService, inboxService,
 │   │   │       followUpService, digestService, seed
-│   │   ├── middleware/
+│   │   ├── middleware/      auth (JWT, console) + workerAuth (key, worker)
 │   │   └── config/
 │   ├── test/                node:test unit tests for the pure/deterministic pieces
+│   ├── Dockerfile           builds from the REPO ROOT so shared/ is included
 │   └── .env.example
 ├── website/                 Public marketing site (static HTML)
 ├── package.json             Root scripts (installs/runs server + client together)
@@ -195,8 +247,8 @@ VexForge-Automation/
 - **MongoDB** — a local `mongod`, a Docker container, or a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster
 - **[Ollama](https://ollama.com) running**, with the three models pulled (see "Local models" above).
   No paid API key. The app runs without it — you just lose drafting, model scoring and the chatbot.
-- **Playwright's Chromium** — required for lead discovery and the Admin deep-scan page:
-  `npx playwright install chromium` (one-time, ~95MB download)
+- **Playwright's Chromium**, *on the worker machine only*: `npx playwright install chromium`
+  (one-time, ~95MB). The deployed server never needs it.
 - *(Optional)* SMTP credentials (e.g. a Gmail app password) if you want one-click email sending instead of opening drafts in your mail client
 
 ## Getting started
@@ -211,7 +263,7 @@ VexForge-Automation/
 2. **Install dependencies** (installs both `server/` and `client/`)
 
    ```bash
-   npm run install:all
+   npm run install:all     # server + client + worker
    ```
 
 3. **Configure environment variables**
@@ -292,6 +344,24 @@ VexForge-Automation/
    Go to <http://localhost:5173> and sign in with the `CEO_EMAIL` / `CEO_PASSWORD` you set in
    `server/.env`.
 
+7. **Start the worker** (a second terminal — this is what actually crawls)
+
+   ```bash
+   cp worker/.env.example worker/.env     # set VEXFORGE_API_URL + WORKER_API_KEY
+   npm run worker
+   ```
+
+   `WORKER_API_KEY` must match the one in `server/.env` exactly — the server fails closed with a
+   503 until both sides have it, because an unset key must never mean "anyone may post leads into
+   the CRM". Generate one with:
+
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   ```
+
+   Without the worker running, the console still works and you can still add leads by hand — but
+   "Start run" just queues a job that nothing picks up, and the Pipeline page will tell you so.
+
 ### Running the public marketing site
 
 Open `website/index.html` directly in a browser, or serve it with any static file server:
@@ -320,7 +390,9 @@ npm run preview --prefix client    # preview the production build
 ### Tests
 
 ```bash
-npm test --prefix server           # node's built-in test runner, no extra dependency
+npm test                           # both packages
+npm test --prefix server           # API, scoring, worker auth, CORS parsing
+npm test --prefix worker           # discovery source parsing, contact extraction
 ```
 
 Covers the deterministic, non-DB, non-network pieces: CSV parsing, lead-dedupe domain matching, the

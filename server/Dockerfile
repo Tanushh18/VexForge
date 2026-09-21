@@ -1,22 +1,23 @@
+# Build context is the REPO ROOT, not server/ — the server imports shared/
+# (model routing, scoring, outreach prompts), which the local worker imports
+# too. See dockerContext in render.yaml.
+
 FROM node:22-bookworm-slim
 
 WORKDIR /app
 
-# Install dependencies first so a source-only change doesn't re-run the
-# (slow) browser install below.
-COPY package*.json ./
-RUN npm ci --omit=dev
+# Dependencies first, so a source-only change doesn't reinstall them.
+COPY server/package*.json ./server/
+RUN cd server && npm ci --omit=dev
 
-# Chromium for lead discovery and the deep contact scan. Installed via
-# Playwright's own CLI rather than from a pinned mcr.microsoft.com/playwright
-# base image: the CLI installs the browser build matching whatever version
-# package-lock.json resolved, so the two can't drift apart. `--with-deps`
-# pulls the system libraries the slim image doesn't ship.
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN npx playwright install --with-deps chromium
+# No Playwright here by design. Chromium costs ~730MB resident, which would
+# force a 2GB instance for a process that otherwise idles at ~140MB — so
+# discovery and deep scans run on the local worker instead, and this image
+# stays small enough for a 512MB plan.
+COPY shared/ ./shared/
+COPY server/ ./server/
 
-COPY . .
-
+WORKDIR /app/server
 ENV NODE_ENV=production
 # Render injects PORT and the app reads it; this is just the local default.
 EXPOSE 4000

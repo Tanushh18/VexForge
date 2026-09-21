@@ -1,7 +1,7 @@
 # VexForge HQ — Render blueprint.
 #
-# Three services: the API (Docker, because lead discovery drives a real
-# Chromium), the HQ console, and the public marketing site.
+# Three services: the API (Docker), the HQ console, and the marketing site.
+# The crawler is NOT here — it runs locally, see worker/.
 #
 # TWO THINGS RENDER CANNOT HOST FOR YOU, both wired as `sync: false` env vars
 # you fill in once in the dashboard:
@@ -20,28 +20,26 @@
 #                the model's ±15 scoring adjustment. Admin · System shows which
 #                roles actually resolved.
 #
-# TWO TOPOLOGIES — pick one:
+# ARCHITECTURE: this deploys the API and both static sites. It does NOT deploy
+# the crawler. Playwright drives a real Chromium (~730MB resident), which would
+# force a 2GB instance for a process that otherwise idles at ~140MB — so
+# discovery and deep scans run in worker/ on your own machine and deliver their
+# results here over HTTP. See worker/README.md.
 #
-#   A. API deployed here (what this file describes). The static sites proxy
-#      /api/* through to it, which keeps everything same-origin and sidesteps
-#      CORS. Render only knows the API's URL after it's created, so if yours
-#      lands on a hostname other than vexforge-api.onrender.com, update the
-#      `destination:` lines below and redeploy the static sites.
+# That also means Playwright never needed tunnelling: it is an in-process
+# library, not a service. Ollama IS a service, so the API reaches it over your
+# tunnel via OLLAMA_URL for chat, follow-ups and digests, while the worker uses
+# its own localhost Ollama for drafting during a run.
 #
-#   B. API on your own machine, exposed through a tunnel — the cheapest
-#      option, and the only one where Playwright and Ollama run on the same
-#      box as the API (Playwright is an in-process library, not a service:
-#      it cannot be tunnelled on its own, so whatever drives it must live
-#      where Chromium is). Deploy ONLY the two static sites, delete the
-#      vexforge-api service below, and instead:
-#        - console:        set VITE_API_BASE_URL to the tunnel URL (build-time
-#                          env var on the static site — redeploy to apply)
-#        - marketing site: set window.VEXFORGE_API_BASE in website/config.js
-#        - local .env:     CLIENT_ORIGIN=https://<console>,https://<site>
-#                          (comma-separated — CORS now applies, since the
-#                          static sites and the API are different origins)
-#      OLLAMA_URL stays http://localhost:11434 in topology B: Ollama is on the
-#      same machine as the API, so it needs no tunnel of its own.
+# The static sites proxy /api/* through to the API, which keeps the browser
+# same-origin and sidesteps CORS. Render only knows the API's URL once it
+# exists, so if yours lands on a hostname other than vexforge-api.onrender.com,
+# update the `destination:` lines below and redeploy the static sites.
+#
+# Cheaper variant: run the API locally too, so nothing is deployed but the two
+# static sites. Delete the vexforge-api service and instead set
+# VITE_API_BASE_URL on the console, window.VEXFORGE_API_BASE in
+# website/config.js, and a comma-separated CLIENT_ORIGIN in your local .env.
 
 services:
   # --- API + background jobs ------------------------------------------------
@@ -49,7 +47,7 @@ services:
     name: vexforge-api
     runtime: docker
     dockerfilePath: ./server/Dockerfile
-    dockerContext: ./server
+    dockerContext: .
     region: singapore # closest region to Delhi
     # Starter (512MB), which is the right size as long as discovery runs on
     # your own machine rather than here. Measured on this codebase: the Node
@@ -83,6 +81,14 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true # Render generates a long random value once
+
+      # Shared secret the local worker authenticates with. Generate with:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      # and put the same value in worker/.env. Until it's set, the worker
+      # endpoints fail closed with 503 — an unset key must never mean
+      # "anyone may post leads into the CRM".
+      - key: WORKER_API_KEY
+        generateValue: true
 
       # CORS: the HQ console's own origin, resolved from the service below.
       - key: CLIENT_ORIGIN

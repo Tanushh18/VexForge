@@ -5,71 +5,20 @@ import OutreachMessage from "../models/OutreachMessage.js";
 import Ticket from "../models/Ticket.js";
 import ActivityLog, { logActivity } from "../models/ActivityLog.js";
 
-import { complete, completeJson, llmReady } from "./modelRouter.js";
+import { complete, completeJson, llmReady } from "../../../shared/modelRouter.js";
+export { generateOutreachDraft, generateFollowUpDraft } from "../../../shared/outreach.js";
 
 // All inference goes through modelRouter, which picks a *local* model per
 // role: `drafting` for outreach copy, `fast` for classification and one-line
 // summaries, `reasoning` for anything that changes what the pipeline does.
 // No paid API, and no single model asked to be good at everything.
-
-const VEXFORGE_PITCH = `VexForge is a digital product & automation studio (Delhi, India) run by Tanush
-(full-stack & automation) and Yashasvi (AI/ML & backend). Services: full-stack web apps (MERN, WordPress,
-e-commerce, dashboards), automation (Instagram/WhatsApp/email outreach, call transcription, n8n/Zapier/Make
-workflows, lead-gen & CRM sync), and AI solutions (chatbots on your own docs, recommendation/search systems,
-LLM fine-tuning). Live proof: WeCode (coding platform) and GgnHome (real-estate platform with AI search) are
-both in production. Pricing is scoped per project on a free intro call, no fixed packages.`;
+//
+// Draft generation itself lives in shared/outreach.js because the local
+// worker drafts too, at the end of a pipeline run — it's re-exported here so
+// existing callers don't have to care where it moved to.
 
 export function chatbotConfigured() {
   return llmReady();
-}
-
-function draftSystemPrompt(channel, extra = "") {
-  return `You write short, specific B2B outreach for VexForge. Channel: ${channel}.
-${VEXFORGE_PITCH}
-${extra}
-Rules: under 140 words, no buzzwords, no "I hope this finds you well", reference something concrete about
-the company, and end with one low-friction ask (a 15-minute call). Reply with JSON only:
-{"subject": "<short subject, empty string for linkedin>", "body": "<the message>"}`;
-}
-
-function leadBrief(lead) {
-  return JSON.stringify({
-    companyName: lead.companyName,
-    industry: lead.industry,
-    website: lead.website,
-    contactName: lead.contactName,
-    notes: lead.notes,
-    signals: lead.signals,
-  });
-}
-
-// Generates ONE outreach draft (email or linkedin) for a specific lead —
-// single-shot, no tools, no side effects beyond returning text. Runs on the
-// `drafting` model: fluency matters here, judgement less so.
-export async function generateOutreachDraft({ channel, lead }) {
-  const result = await completeJson("drafting", {
-    system: draftSystemPrompt(channel),
-    prompt: leadBrief(lead),
-    timeoutMs: 120000,
-  });
-  if (!result?.body) throw new Error("The drafting model returned no usable message — check `ollama ps`.");
-  return { subject: result.subject || `Quick idea for ${lead.companyName}`, body: result.body };
-}
-
-// Drafts a polite nudge for a lead that's gone quiet after an initial
-// message — same generator, framed as a follow-up rather than a first touch.
-export async function generateFollowUpDraft({ channel, lead, daysSinceSent }) {
-  const result = await completeJson("drafting", {
-    system: draftSystemPrompt(
-      channel,
-      `This is a FOLLOW-UP — you already reached out ${daysSinceSent} days ago and heard nothing back. Keep it
-brief and friendly, no guilt-tripping, reference that it's a follow-up, and do not repeat the full pitch.`
-    ),
-    prompt: leadBrief(lead),
-    timeoutMs: 120000,
-  });
-  if (!result?.body) throw new Error("The drafting model returned no usable follow-up message.");
-  return { subject: result.subject || `Following up — ${lead.companyName}`, body: result.body };
 }
 
 // Tags a support ticket's urgency from its transcript — a hint for triage
