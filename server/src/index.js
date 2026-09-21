@@ -4,6 +4,7 @@ import cors from "cors";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import { connectDB } from "./config/db.js";
+import { parseAllowedOrigins, originChecker } from "./config/origins.js";
 import { runSeed } from "./services/seed.js";
 import { startBackgroundJobs } from "./services/jobRegistry.js";
 
@@ -21,13 +22,8 @@ import pipelineRoutes from "./routes/pipeline.js";
 
 const app = express();
 app.set("trust proxy", 1); // behind a tunnel/reverse proxy — needed for rate-limit to key on the real client IP
-// Hosting platforms hand out a bare hostname (Render's `fromService` host
-// property, for one), but the CORS origin has to carry a scheme or every
-// preflight quietly fails. Assume https for anything that arrives bare.
-const clientOrigin = (process.env.CLIENT_ORIGIN || "http://localhost:5173").trim();
-const CLIENT_ORIGIN = /^https?:\/\//.test(clientOrigin) ? clientOrigin : `https://${clientOrigin}`;
-
-app.use(cors({ origin: CLIENT_ORIGIN }));
+const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.CLIENT_ORIGIN);
+app.use(cors({ origin: originChecker(ALLOWED_ORIGINS) }));
 app.use(express.json({ limit: "1mb" }));
 app.use(morgan("dev"));
 

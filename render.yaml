@@ -20,10 +20,28 @@
 #                the model's ±15 scoring adjustment. Admin · System shows which
 #                roles actually resolved.
 #
-# BEFORE YOU DEPLOY: the two static sites proxy /api/* to the API service by
-# absolute URL, and Render only knows that URL after the API is created. If
-# your API lands on a hostname other than vexforge-api.onrender.com, update
-# the three `destination:` lines below and redeploy the static sites.
+# TWO TOPOLOGIES — pick one:
+#
+#   A. API deployed here (what this file describes). The static sites proxy
+#      /api/* through to it, which keeps everything same-origin and sidesteps
+#      CORS. Render only knows the API's URL after it's created, so if yours
+#      lands on a hostname other than vexforge-api.onrender.com, update the
+#      `destination:` lines below and redeploy the static sites.
+#
+#   B. API on your own machine, exposed through a tunnel — the cheapest
+#      option, and the only one where Playwright and Ollama run on the same
+#      box as the API (Playwright is an in-process library, not a service:
+#      it cannot be tunnelled on its own, so whatever drives it must live
+#      where Chromium is). Deploy ONLY the two static sites, delete the
+#      vexforge-api service below, and instead:
+#        - console:        set VITE_API_BASE_URL to the tunnel URL (build-time
+#                          env var on the static site — redeploy to apply)
+#        - marketing site: set window.VEXFORGE_API_BASE in website/config.js
+#        - local .env:     CLIENT_ORIGIN=https://<console>,https://<site>
+#                          (comma-separated — CORS now applies, since the
+#                          static sites and the API are different origins)
+#      OLLAMA_URL stays http://localhost:11434 in topology B: Ollama is on the
+#      same machine as the API, so it needs no tunnel of its own.
 
 services:
   # --- API + background jobs ------------------------------------------------
@@ -33,22 +51,21 @@ services:
     dockerfilePath: ./server/Dockerfile
     dockerContext: ./server
     region: singapore # closest region to Delhi
-    # Standard (2GB), for two independent reasons:
+    # Starter (512MB), which is the right size as long as discovery runs on
+    # your own machine rather than here. Measured on this codebase: the Node
+    # process sits at ~140MB idle, so 512MB is roomy — but a Playwright run
+    # adds ~600-730MB of Chromium processes on top (it's multi-process; that
+    # figure is the whole tree), which OOM-kills a 512MB instance and takes
+    # the API down with it.
     #
-    #   Memory — measured on this codebase: the Node process sits at ~140MB
-    #   idle, and a Playwright run adds ~600-730MB of Chromium processes on
-    #   top (the browser is multi-process; that figure is the whole tree).
-    #   512MB plans OOM-kill the instance the moment a pipeline run launches
-    #   the browser, and a killed instance takes the API down with it.
+    # So: keep `starter` while you trigger pipeline runs locally against the
+    # same Atlas cluster. Move to `standard` (2GB) only when you set
+    # PIPELINE_SCHEDULE_ENABLED=true and want the crawl running unattended.
     #
-    #   Uptime — free instances spin down when idle, and a spun-down instance
-    #   runs no background jobs: no reply checking, no follow-up drafting, no
-    #   scheduled pipeline. A lead-gen system that only works while someone
-    #   has the tab open isn't one.
-    #
-    # If you never run discovery or deep scans on this box, 512MB is fine —
-    # everything except Chromium fits comfortably.
-    plan: standard
+    # Not `free`: free instances spin down when idle, and a spun-down instance
+    # runs no background jobs — no reply checking, no follow-up drafting, no
+    # scheduled pipeline. Those jobs are the entire reason to deploy this.
+    plan: starter
     healthCheckPath: /api/health
     autoDeploy: false
     envVars:

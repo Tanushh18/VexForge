@@ -1,4 +1,15 @@
-const BASE = "/api";
+// Where the API lives.
+//
+// Default is the relative "/api", which covers local dev (Vite proxies it to
+// :4000) and any host that proxies /api through to the server.
+//
+// Set VITE_API_BASE_URL to point the console at an API on a different origin —
+// a Cloudflare tunnel to the API running on your own machine, for instance.
+// Vite inlines this at BUILD time, not runtime: a static site has no server to
+// read env vars from, so changing it means rebuilding, not just restarting.
+// On Render, set it on the static site and trigger a redeploy.
+const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/+$/, "");
+const BASE = API_ORIGIN ? `${API_ORIGIN}/api` : "/api";
 
 function authHeaders() {
   const token = localStorage.getItem("vf_token");
