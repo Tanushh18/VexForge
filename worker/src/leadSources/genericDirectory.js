@@ -18,20 +18,40 @@ import { cleanOutboundUrl, isPlatformDomain } from "./browser.js";
 // noisy (nav links, "Visit site" buttons). isLikelyCompanyName() below is the
 // one filter standing between this and junk.
 
+// social/platform hosts plus, confirmed by a real diagnostic run, the
+// specific ad/form/CDN-error hosts that showed up as false positives:
+// typeform.com (a "Feedback" link picked up as a company), silktide.com (a
+// cookie-consent-banner ad widget), and cloudflare.com (an error page's own
+// domain when the real target failed to load — libhunt.com came back as
+// "Cloudflare" pointing at a 5xx landing page).
 const GENERIC_NOISE_HOSTS = [
   "twitter.com", "x.com", "facebook.com", "linkedin.com", "instagram.com",
   "youtube.com", "youtu.be", "github.com", "discord.com", "discord.gg",
   "medium.com", "notion.site", "t.me", "wa.me", "apps.apple.com", "play.google.com",
+  "typeform.com", "silktide.com", "cloudflare.com",
 ];
 
 // Link text that isn't a company name — UI chrome, not a product.
 const NOISE_TEXT = /^(visit|website|home|sign\s*up|log\s*in|learn more|read more|get started|try it|view|open|link|↗|→|»)$/i;
 
+// Substring checks for chrome that doesn't fill the whole link text — e.g. a
+// cookie-consent widget's "Get this banner for free" isn't a UI label the
+// exact-match NOISE_TEXT catches, but "banner" alone is a reliable enough
+// signal it isn't a product name.
+const NOISE_SUBSTRINGS = ["feedback", "cookie", "consent", "banner", "subscribe", "newsletter", "privacy policy", "terms of service", "advertisement", "sponsored"];
+
 export function isLikelyCompanyName(text) {
   const t = (text || "").trim();
   if (!t) return false;
-  if (t.length < 2 || t.length > 80) return false;
+  // Confirmed by a real run: alternativeto.net's ad placements returned link
+  // text that was a full marketing sentence ("Proton VPN High speed private
+  // VPN protected by strong Swiss privacy laws"), which the old 80-char cap
+  // let through. A real product name is a handful of words, not a pitch.
+  if (t.length < 2 || t.length > 60) return false;
+  if (t.split(/\s+/).length > 8) return false;
   if (NOISE_TEXT.test(t)) return false;
+  const lower = t.toLowerCase();
+  if (NOISE_SUBSTRINGS.some((s) => lower.includes(s))) return false;
   if (/^https?:\/\//i.test(t)) return false; // the link text was just the URL itself
   return true;
 }

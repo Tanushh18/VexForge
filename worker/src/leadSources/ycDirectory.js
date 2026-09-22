@@ -9,7 +9,17 @@ import { cleanOutboundUrl, isPlatformDomain } from "./browser.js";
 // Contact emails still come from each company's own site via the enrichment
 // step, exactly as they do for a manually-added lead.
 
-const PLATFORM_HOSTS = ["ycombinator.com", "twitter.com", "x.com", "linkedin.com", "github.com", "crunchbase.com", "facebook.com"];
+// Confirmed by a real diagnostic run (worker/src/diagnose.js on GitHub
+// Actions): without startupschool.org and workatastartup.com here, a company
+// profile whose first non-ycombinator.com link happened to be one of YC's
+// OWN other properties got that stored as the "company website" instead —
+// e.g. doordash's lead landed with website=startupschool.org. Both are
+// YC-owned but live on separate domains, so the ycombinator.com check alone
+// didn't catch them.
+export const PLATFORM_HOSTS = [
+  "ycombinator.com", "startupschool.org", "workatastartup.com",
+  "twitter.com", "x.com", "linkedin.com", "github.com", "crunchbase.com", "facebook.com",
+];
 
 export function directoryUrl({ batches = [], hiringOnly = false } = {}) {
   const params = new URLSearchParams();

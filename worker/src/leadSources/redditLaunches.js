@@ -6,6 +6,15 @@ import axios from "axios";
 // scraping): the same "official endpoint over parsed HTML" approach as the
 // HN source, so this needs no browser and is no riskier to run than a plain
 // HTTP call.
+//
+// Confirmed by a real diagnostic run: Reddit returns 403 on every request
+// from a GitHub Actions runner specifically — this is Reddit blocking known
+// datacenter/cloud IP ranges, not a bug in this code or a wrong endpoint.
+// The same request works fine from a residential IP (a laptop, a home
+// server), so this source is fully functional running on the local worker;
+// it just can't be relied on from a CI runner the way the other direct-fetch
+// sources can. Left registered rather than removed — it's real and valuable
+// wherever it can actually reach Reddit.
 
 const SUBREDDITS = ["startups", "SaaS", "EntrepreneurRideAlong"];
 const PLATFORM_HOSTS = [

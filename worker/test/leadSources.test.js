@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseLaunchTitle, isUsableCompanyUrl } from "../src/leadSources/hnLaunches.js";
 import { pickProductLinks, slugToName } from "../src/leadSources/productHunt.js";
-import { pickCompanySlugs, directoryUrl } from "../src/leadSources/ycDirectory.js";
+import { pickCompanySlugs, directoryUrl, PLATFORM_HOSTS as YC_PLATFORM_HOSTS } from "../src/leadSources/ycDirectory.js";
+import { isPlatformDomain as isYcPlatformDomain } from "../src/leadSources/browser.js";
 import { cleanOutboundUrl, isPlatformDomain } from "../src/leadSources/browser.js";
 import { isUsableCompanyUrl as redditUsableUrl, cleanTitle } from "../src/leadSources/redditLaunches.js";
 import { stripPublisher, parseFundingTitle } from "../src/leadSources/fundingNews.js";
@@ -51,6 +52,16 @@ test("slugToName turns a slug into something presentable", () => {
 test("pickCompanySlugs only takes YC company profile links", () => {
   const slugs = pickCompanySlugs(["/companies/acme", "/companies/acme?batch=W24", "/companies/founders", "/blog/post", "/about"]);
   assert.deepEqual(slugs, ["acme"]);
+});
+
+test("yc_directory's platform filter excludes YC's OWN other properties", () => {
+  // Real bug from a live diagnostic run: without these, a company profile's
+  // first non-ycombinator.com link could be one of YC's other domains
+  // instead of the company's actual site — doordash's lead landed with
+  // website=startupschool.org because that link happened to come first.
+  assert.equal(isYcPlatformDomain("https://www.startupschool.org", YC_PLATFORM_HOSTS), true);
+  assert.equal(isYcPlatformDomain("https://www.workatastartup.com/jobs/1", YC_PLATFORM_HOSTS), true);
+  assert.equal(isYcPlatformDomain("https://acme.example", YC_PLATFORM_HOSTS), false);
 });
 
 test("directoryUrl encodes batch and hiring filters", () => {
