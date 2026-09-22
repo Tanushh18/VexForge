@@ -27,12 +27,17 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 export const ROLES = ["reasoning", "drafting", "fast"];
 
-// Groq's free-tier catalog: one family (Llama 3.x) across two sizes, so
-// output style stays consistent across roles.
+// Groq's free-tier catalog varies by account — confirm what's actually
+// listed under Chat Completions in console.groq.com/settings/limits before
+// relying on a model name here. gpt-oss is the current default: 120b for the
+// judgement calls, 20b for fluency-over-judgement and high-volume work.
+// Never point a role at a *-prompt-guard-* or *-safeguard-* model — those are
+// injection/content classifiers, not chat models, and return a label instead
+// of prose.
 export const MODELS = {
-  reasoning: process.env.GROQ_MODEL_REASONING || "llama-3.3-70b-versatile",
-  drafting: process.env.GROQ_MODEL_DRAFTING || "llama-3.1-8b-instant",
-  fast: process.env.GROQ_MODEL_FAST || "llama-3.1-8b-instant",
+  reasoning: process.env.GROQ_MODEL_REASONING || "openai/gpt-oss-120b",
+  drafting: process.env.GROQ_MODEL_DRAFTING || "openai/gpt-oss-20b",
+  fast: process.env.GROQ_MODEL_FAST || "openai/gpt-oss-20b",
 };
 
 // One env var collapses every role onto a single model, same pattern as the
