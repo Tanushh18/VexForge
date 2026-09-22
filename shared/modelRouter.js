@@ -1,186 +1,146 @@
-// Routes each kind of work to a *different* local model, instead of asking one
-// small model to do everything. Three roles, because the trade-offs differ:
+// Routes each kind of work to a *different* Groq-hosted model, instead of
+// asking one model to do everything. Three roles, because the trade-offs
+// differ:
 //
 //   reasoning — decisions that change what the pipeline does (lead scoring,
-//               fit assessment, ticket triage, digests). Worth a bigger,
-//               slower model: a wrong call here wastes a real send slot.
+//               fit assessment, ticket triage, digests). Worth the bigger model.
 //   drafting  — outreach copy. Mid-size; fluency matters more than judgement.
 //   fast      — classification and one-line summaries. Small and cheap; these
-//               run constantly and a 14B model would make the UI crawl.
+//               run constantly.
 //
-// Everything runs against a local Ollama. The older VexForge-LocalLLM sibling
-// service is still supported as a backend so existing setups keep working;
-// `LLM_BACKEND=auto` (the default) prefers Ollama and falls back to it.
+// Backend: Groq's free-tier API only (OpenAI-compatible /chat/completions).
+// GROQ_API_KEYS is a comma-separated list — each one is its own free-tier
+// account with its own daily/per-minute caps, so holding several and rotating
+// past a rate-limited or dead key multiplies the effective daily budget. This
+// is pure fallback, not load-balancing: a key is used until it fails (429 or
+// any other error), then the next one takes over; it does not round-robin
+// across keys on every call.
 
-const ENV_OLLAMA_URL = (process.env.OLLAMA_URL || "http://localhost:11434").replace(/\/$/, "");
-const LOCAL_LLM_URL = (process.env.LOCAL_LLM_URL || "http://localhost:5001").replace(/\/$/, "");
+function parseKeys() {
+  return (process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
+}
 
-// Deployed instances have no local Ollama — the CEO can point this at a
-// tunnel to their own machine from the Admin page instead of redeploying
-// with a new env var. The override lives in memory only; the server loads it
-// from the DB at startup and after every save (see routes/admin.js).
-let ollamaUrlOverride = null;
-export function setOllamaUrlOverride(url) {
-  ollamaUrlOverride = url ? url.trim().replace(/\/$/, "") : null;
-}
-export function getOllamaUrl() {
-  return ollamaUrlOverride || ENV_OLLAMA_URL;
-}
-const BACKEND = process.env.LLM_BACKEND || "auto"; // auto | ollama | localllm
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 export const ROLES = ["reasoning", "drafting", "fast"];
 
-// Defaults are the Qwen2.5 instruct line: one family, three sizes, so output
-// style stays consistent across roles and you only pull one vocabulary.
+// Groq's free-tier catalog: one family (Llama 3.x) across two sizes, so
+// output style stays consistent across roles.
 export const MODELS = {
-  reasoning: process.env.OLLAMA_MODEL_REASONING || "qwen2.5:14b-instruct",
-  drafting: process.env.OLLAMA_MODEL_DRAFTING || "qwen2.5:7b-instruct",
-  fast: process.env.OLLAMA_MODEL_FAST || "qwen2.5:3b-instruct",
+  reasoning: process.env.GROQ_MODEL_REASONING || "llama-3.3-70b-versatile",
+  drafting: process.env.GROQ_MODEL_DRAFTING || "llama-3.1-8b-instant",
+  fast: process.env.GROQ_MODEL_FAST || "llama-3.1-8b-instant",
 };
 
-// If a machine can't hold the 14B, one env var collapses every role onto a
-// single model rather than forcing three separate overrides.
-if (process.env.OLLAMA_MODEL_ALL) {
-  for (const role of ROLES) MODELS[role] = process.env.OLLAMA_MODEL_ALL;
+// One env var collapses every role onto a single model, same pattern as the
+// old OLLAMA_MODEL_ALL escape hatch.
+if (process.env.GROQ_MODEL_ALL) {
+  for (const role of ROLES) MODELS[role] = process.env.GROQ_MODEL_ALL;
 }
 
 const state = {
-  backend: null,
-  ollamaUp: false,
-  localLlmUp: false,
-  installed: [],
-  lastCheck: null,
+  keys: parseKeys(),
+  // Index of the key currently in use. Sticky across calls: a key stays
+  // "current" until it fails, so a working key isn't abandoned needlessly.
+  currentIndex: 0,
 };
 
-async function probeOllama() {
-  try {
-    const res = await fetch(`${getOllamaUrl()}/api/tags`, { signal: AbortSignal.timeout(3000) });
-    if (!res.ok) return false;
-    const data = await res.json();
-    state.installed = (data.models || []).map((m) => m.name);
-    return true;
-  } catch {
-    state.installed = [];
-    return false;
-  }
-}
-
-async function probeLocalLlm() {
-  try {
-    const res = await fetch(`${LOCAL_LLM_URL}/health`, { signal: AbortSignal.timeout(3000) });
-    const data = await res.json();
-    return !!(data.ok && data.modelPulled);
-  } catch {
-    return false;
-  }
-}
-
-export async function refreshModelHealth() {
-  const [ollamaUp, localLlmUp] = await Promise.all([
-    BACKEND === "localllm" ? Promise.resolve(false) : probeOllama(),
-    BACKEND === "ollama" ? Promise.resolve(false) : probeLocalLlm(),
-  ]);
-  state.ollamaUp = ollamaUp;
-  state.localLlmUp = localLlmUp;
-  state.backend = ollamaUp ? "ollama" : localLlmUp ? "localllm" : null;
-  state.lastCheck = new Date();
-  return state;
-}
-
-refreshModelHealth();
-setInterval(refreshModelHealth, 15000).unref?.();
-
 export function llmReady() {
-  return state.backend !== null;
+  return state.keys.length > 0;
 }
 
-// A role is only *really* available on Ollama if its model is actually pulled;
-// an unpulled model 404s at generate time. Ollama tags carry a `:latest`
-// suffix that `ollama pull qwen2.5:7b-instruct` does not, so compare loosely.
-export function roleAvailable(role) {
-  if (state.backend === "localllm") return true; // that service owns its own model
-  if (state.backend !== "ollama") return false;
-  const want = MODELS[role];
-  return state.installed.some((n) => n === want || n.replace(/:latest$/, "") === want.replace(/:latest$/, ""));
-}
-
-// Falls back down the size ladder rather than failing: a scored lead from the
-// 3B model beats no scored lead at all, and the caller is told what it got.
-export function resolveRole(role) {
-  const ladder = { reasoning: ["reasoning", "drafting", "fast"], drafting: ["drafting", "fast", "reasoning"], fast: ["fast", "drafting", "reasoning"] };
-  for (const candidate of ladder[role] || [role]) {
-    if (roleAvailable(candidate)) return candidate;
-  }
-  return null;
+// Kept for API compatibility with callers that used to re-probe Ollama after
+// an admin-set URL change. Groq has nothing to probe — readiness is just
+// "is at least one key configured" — so this is a no-op that resolves
+// immediately.
+export async function refreshModelHealth() {
+  state.keys = parseKeys();
+  if (state.currentIndex >= state.keys.length) state.currentIndex = 0;
+  return modelStatus();
 }
 
 export function modelStatus() {
   return {
-    backend: state.backend,
-    ollamaUrl: getOllamaUrl(),
-    localLlmUrl: LOCAL_LLM_URL,
-    lastCheck: state.lastCheck,
-    installed: state.installed,
+    backend: llmReady() ? "groq" : null,
+    keyCount: state.keys.length,
+    activeKeyIndex: llmReady() ? state.currentIndex : null,
     roles: ROLES.map((role) => ({
       role,
       model: MODELS[role],
-      available: roleAvailable(role),
-      resolvesTo: resolveRole(role),
+      available: llmReady(),
+      resolvesTo: llmReady() ? role : null,
     })),
   };
 }
 
-async function ollamaChat({ model, system, prompt, json, timeoutMs, temperature }) {
-  const res = await fetch(`${getOllamaUrl()}/api/chat`, {
+function maskKey(key) {
+  return key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : "****";
+}
+
+async function groqChat({ key, model, system, prompt, json, timeoutMs, temperature }) {
+  const res = await fetch(GROQ_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
     body: JSON.stringify({
       model,
-      stream: false,
-      format: json ? "json" : undefined,
-      options: { temperature: temperature ?? (json ? 0 : 0.7) },
+      temperature: temperature ?? (json ? 0 : 0.7),
+      response_format: json ? { type: "json_object" } : undefined,
       messages: [...(system ? [{ role: "system", content: system }] : []), { role: "user", content: prompt }],
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
+
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    throw new Error(`Ollama returned ${res.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`);
+    const err = new Error(`Groq returned ${res.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`);
+    err.status = res.status;
+    throw err;
   }
   const data = await res.json();
-  return data.message?.content ?? "";
-}
-
-// The older sibling service exposes only a summarize endpoint, with no
-// separate system-prompt slot — so the system prompt is folded into the
-// instruction. Without this, a JSON-format request sent through this backend
-// loses its "reply with JSON only" rule and every structured call fails.
-async function localLlmSummarize({ system, prompt, timeoutMs }) {
-  const res = await fetch(`${LOCAL_LLM_URL}/v1/summarize`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ instruction: system ? `${system}\n\n${prompt}` : prompt, data: {} }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!res.ok) throw new Error(`Local LLM service returned ${res.status}`);
-  const data = await res.json();
-  return data.text ?? "";
+  return data.choices?.[0]?.message?.content ?? "";
 }
 
 // The one call everything else goes through. `role` picks the model; the
 // caller never names a model directly, so swapping models is an env change.
+//
+// Rotation: tries the current key first, and on a rate-limit (429) or auth
+// failure (401/403) — the two cases where retrying the SAME key is pointless
+// — advances to the next one and retries, up to once per configured key. Any
+// other error (timeout, 5xx, network) is NOT treated as a reason to burn
+// through keys; it's surfaced immediately, since the key itself is probably
+// fine and the caller's own retry/fallback logic (e.g. scoring's "return the
+// deterministic score" catch) already handles transient failures.
 export async function complete(role, { system, prompt, json = false, timeoutMs = 120000, temperature }) {
-  if (!llmReady()) throw new Error("No local model backend reachable — is Ollama running?");
-  if (state.backend === "localllm") return localLlmSummarize({ system, prompt, timeoutMs });
+  if (!llmReady()) throw new Error("No Groq API key configured — set GROQ_API_KEYS.");
+  const model = MODELS[role] || MODELS.fast;
 
-  const resolved = resolveRole(role);
-  if (!resolved) throw new Error(`No local model available for role "${role}" — run: ollama pull ${MODELS[role]}`);
-  return ollamaChat({ model: MODELS[resolved], system, prompt, json, timeoutMs, temperature });
+  let lastErr;
+  for (let attempt = 0; attempt < state.keys.length; attempt++) {
+    const key = state.keys[state.currentIndex];
+    try {
+      return await groqChat({ key, model, system, prompt, json, timeoutMs, temperature });
+    } catch (err) {
+      lastErr = err;
+      if (err.status === 429 || err.status === 401 || err.status === 403) {
+        console.warn(`[modelRouter] key ${maskKey(key)} ${err.status === 429 ? "rate-limited" : "rejected"} — rotating to next key`);
+        state.currentIndex = (state.currentIndex + 1) % state.keys.length;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr || new Error("All configured Groq keys are rate-limited or invalid.");
 }
 
-// Models drift into prose around their JSON even with format:"json" set, and
-// a reasoning step that throws on a stray "Here you go:" is a reasoning step
-// that fails in production. Salvage the first balanced object instead.
+// Models drift into prose around their JSON even with response_format set,
+// and a reasoning step that throws on a stray "Here you go:" is a reasoning
+// step that fails in production. Salvage the first balanced object instead.
 export function parseJsonLoose(text) {
   if (!text) return null;
   try {

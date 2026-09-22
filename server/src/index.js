@@ -7,8 +7,7 @@ import { connectDB } from "./config/db.js";
 import { parseAllowedOrigins, originChecker } from "./config/origins.js";
 import { runSeed } from "./services/seed.js";
 import { startBackgroundJobs } from "./services/jobRegistry.js";
-import { getSettings } from "./models/Settings.js";
-import { setOllamaUrlOverride, refreshModelHealth } from "../../shared/modelRouter.js";
+import { refreshModelHealth } from "../../shared/modelRouter.js";
 
 import authRoutes from "./routes/auth.js";
 import employeeRoutes from "./routes/employees.js";
@@ -69,13 +68,7 @@ const PORT = process.env.PORT || 4000;
 
 connectDB()
   .then(() => runSeed())
-  .then(async () => {
-    const { ollamaUrl } = await getSettings();
-    if (ollamaUrl) {
-      setOllamaUrlOverride(ollamaUrl);
-      await refreshModelHealth();
-    }
-  })
+  .then(() => refreshModelHealth())
   .then(() => {
     app.listen(PORT, () => console.log(`[vexforge-hq] server listening on :${PORT}`));
     startBackgroundJobs();
