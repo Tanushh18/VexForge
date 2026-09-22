@@ -89,6 +89,30 @@ checking specific boxes on the Lead Pipeline page always runs exactly those;
 the "Run next batch (rotation)" button and the scheduled job both omit an
 explicit list and get the next slice off the cursor.
 
+### Running the crawl without a machine of your own
+
+`worker/` can run anywhere with a real network — including a GitHub Actions
+runner, which has no memory ceiling to work around and no laptop that has to
+stay open. Two workflows in `.github/workflows/`:
+
+- **`diagnose-sources.yml`** — tests all 20 sources with no secrets and no
+  deployed API, safe to run any time. See `worker/README.md`.
+- **`pipeline.yml`** — the real worker: polls the deployed API, claims a
+  queued job, delivers leads back. Needs `VEXFORGE_API_URL` and
+  `WORKER_API_KEY` as GitHub repo secrets (Settings → Secrets and variables
+  → Actions), the second matching the server's value exactly.
+
+By default `pipeline.yml` only runs on its own daily cron or a manual click
+in the Actions tab — a run queued from the console just waits for one of
+those. Setting `GITHUB_TRIGGER_TOKEN`/`_OWNER`/`_REPO` on the **server**
+closes that gap: the moment a run is queued, the server calls GitHub's API to
+wake the workflow immediately, the same as clicking "Run workflow" yourself.
+Skipped automatically when a local worker is already online (its atomic
+job-claim makes a redundant Actions run harmless, but there's no reason to
+spend Actions minutes on one when a machine is already polling). See
+`server/.env.example` for the exact token scope required — a fine-grained PAT
+limited to this one repo's Actions permission, nothing else.
+
 ### Contact is mandatory
 
 A lead with no email after the full tiered enrichment pass — static site

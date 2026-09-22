@@ -8,6 +8,7 @@ export default function Admin() {
   const [models, setModels] = useState(null);
   const [bgJobs, setBgJobs] = useState([]);
   const [worker, setWorker] = useState(null);
+  const [githubTrigger, setGithubTrigger] = useState(null);
   const [form, setForm] = useState({ companyName: "", domain: "", industry: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -32,6 +33,7 @@ export default function Admin() {
     setModels(m);
     setBgJobs(j);
     setWorker(p?.worker || null);
+    setGithubTrigger(p?.githubTrigger || null);
     if (s) {
       setOllamaSaved(s.ollamaUrl || "");
       setOllamaUrlInput((current) => (current ? current : s.ollamaUrl || ""));
@@ -173,6 +175,20 @@ export default function Admin() {
         <div className="hint" style={{ marginBottom: 10 }}>
           Chromium runs on your machine, not here — a scan queued now will sit until the worker starts
           (<code>cd worker &amp;&amp; npm start</code>).
+        </div>
+      )}
+
+      {githubTrigger?.configured && (
+        <div className="hint" style={{ marginBottom: 14 }}>
+          GitHub Actions instant-trigger:{" "}
+          {githubTrigger.lastTriggerAt ? (
+            <span className={githubTrigger.lastOk ? "" : "error-box"} style={{ display: "inline" }}>
+              {githubTrigger.lastOk ? "last wake succeeded" : `last wake failed — ${githubTrigger.lastError}`} (
+              {new Date(githubTrigger.lastTriggerAt).toLocaleString()})
+            </span>
+          ) : (
+            "configured, not triggered yet"
+          )}
         </div>
       )}
 

@@ -252,7 +252,11 @@ export default function Pipeline() {
           </button>
           <button className="btn" disabled={busy || status?.running} onClick={rescore}>Re-score CRM</button>
           {!status?.worker?.anyOnline && status?.worker?.configured && (
-            <span className="hint">Queueing works, but nothing runs until a worker is online.</span>
+            <span className="hint">
+              {status?.githubTrigger?.configured
+                ? "No local worker online — starting a run will wake the GitHub Actions worker instead."
+                : "Queueing works, but nothing runs until a worker is online."}
+            </span>
           )}
         </div>
         <div className="hint" style={{ marginTop: 8 }}>

@@ -10,6 +10,7 @@ import { ingestLeads } from "../services/leadIngestService.js";
 import { notify } from "../services/notifyService.js";
 import { logActivity } from "../models/ActivityLog.js";
 import { SOURCE_CATALOGUE, DEFAULTS, enqueueRun, findActiveRun } from "../services/pipelineQueue.js";
+import { githubTriggerStatus } from "../services/githubTrigger.js";
 
 const router = Router();
 
@@ -195,6 +196,7 @@ router.get("/status", async (_req, res) => {
     bands: Object.fromEntries(bands.map((b) => [b._id || "cold", b.count])),
     quota,
     worker: { ...workerStatus(), configured: workerAuthConfigured() },
+    githubTrigger: githubTriggerStatus(),
   });
 });
 

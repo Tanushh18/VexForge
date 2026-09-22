@@ -1,5 +1,7 @@
 import PipelineRun from "../models/PipelineRun.js";
 import { getSettings, updateSettings } from "../models/Settings.js";
+import { triggerWorkflow, githubTriggerConfigured } from "./githubTrigger.js";
+import { workerStatus } from "./workerRegistry.js";
 
 // Queueing a pipeline run, shared by the console's "Start run" button and the
 // scheduled job. The server never executes a run — Chromium lives on the
@@ -114,13 +116,25 @@ export async function enqueueRun(options = {}, trigger = "manual") {
     throw err;
   }
 
-  return PipelineRun.create({
+  const run = await PipelineRun.create({
     kind: "discovery",
     status: "queued",
     stage: "queued",
     trigger,
     options: { ...DEFAULTS, ...options, sources },
   });
+
+  // Wake the GitHub Actions worker rather than leaving this job to wait for
+  // the workflow's own daily cron. Skipped if a local worker already polled
+  // recently — its atomic job-claim makes a redundant Actions run harmless,
+  // but there's no reason to spend Actions minutes on one when a machine is
+  // already right here checking every 15s. Fire-and-forget: this never
+  // blocks or fails the enqueue, since the job is valid and queued either way.
+  if (githubTriggerConfigured() && !workerStatus().anyOnline) {
+    triggerWorkflow().catch(() => {}); // triggerWorkflow itself never rejects; belt and suspenders
+  }
+
+  return run;
 }
 
 // The scheduled entry point. Skips rather than stacking if something is

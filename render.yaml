@@ -91,6 +91,23 @@ services:
       - key: WORKER_API_KEY
         generateValue: true
 
+      # Optional: wakes the GitHub Actions worker the instant a run is queued,
+      # instead of waiting for its daily cron. GITHUB_TRIGGER_TOKEN must be a
+      # FINE-GRAINED PAT scoped to ONLY this repo with ONLY "Actions:
+      # read and write" permission (no code, no other repos, no secrets) — see
+      # server/.env.example for the full rationale. Leave these blank to skip
+      # this feature entirely; a queued run still runs, just on the schedule.
+      - key: GITHUB_TRIGGER_TOKEN
+        sync: false
+      - key: GITHUB_TRIGGER_OWNER
+        sync: false
+      - key: GITHUB_TRIGGER_REPO
+        sync: false
+      - key: GITHUB_TRIGGER_WORKFLOW
+        value: pipeline.yml
+      - key: GITHUB_TRIGGER_REF
+        value: main
+
       # CORS: the HQ console's own origin, resolved from the service below.
       - key: CLIENT_ORIGIN
         fromService:
