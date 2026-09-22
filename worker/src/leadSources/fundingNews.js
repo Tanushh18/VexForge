@@ -29,11 +29,29 @@ export function stripPublisher(title = "") {
   return idx > 0 ? title.slice(0, idx).trim() : title.trim();
 }
 
+// Headlines wrap the name in descriptors — "AI startup Mantic raises…",
+// "Portland startup Antfly bags…", "Five months old, Noetive lands…". The
+// name is what's left after the last comma and after any leading
+// "<adjectives> startup/firm/platform/maker" phrase. Getting this right
+// matters twice over: the name is the lead, and it is what the website
+// resolver searches on.
+const DESCRIPTOR = /^.*?\b(?:startup|start-up|firm|company|platform|maker|brand|venture|unicorn|saas|app)\s+/i;
+
+export function cleanCompanyName(rawName = "") {
+  let name = rawName.trim();
+  const comma = name.lastIndexOf(",");
+  if (comma > 0 && comma < name.length - 2) name = name.slice(comma + 1).trim();
+  const stripped = name.replace(DESCRIPTOR, "").trim();
+  // Only accept the strip if something plausible is left.
+  if (stripped.length >= 2 && /[a-z]/i.test(stripped)) name = stripped;
+  return name.replace(/^(the|a|an)\s+/i, "").replace(/\s+/g, " ").trim();
+}
+
 export function parseFundingTitle(rawTitle = "") {
   const title = stripPublisher(rawTitle);
   const match = NAME_PATTERN.exec(title);
   if (!match) return null;
-  const name = match[1].trim();
+  const name = cleanCompanyName(match[1]);
   // A regex match that swallowed most of the headline (no room left for an
   // amount/round) usually means it matched something that wasn't a company
   // name — better to skip than to create a garbage lead.
@@ -41,11 +59,11 @@ export function parseFundingTitle(rawTitle = "") {
   return { name, description: title };
 }
 
-export async function fetchFundingNews({ limit = 15, sinceDays = 7, query } = {}) {
+export async function fetchFundingNews({ limit = 15, sinceDays = 7, query, region = "IN" } = {}) {
   const q = query || `(startup) (${FUNDING_VERBS.split("|").join(" OR ")}) (seed OR "series a" OR funding) when:${sinceDays}d`;
   const { data } = await axios.get(FEED, {
     timeout: 15000,
-    params: { q, hl: "en-IN", gl: "IN", ceid: "IN:en" },
+    params: region === "IN" ? { q, hl: "en-IN", gl: "IN", ceid: "IN:en" } : { q, hl: "en-US", gl: "US", ceid: "US:en" },
     headers: { "User-Agent": "VexForgeLeadScout/1.0 (+B2B lead discovery; low volume)" },
   });
 
@@ -68,8 +86,8 @@ export async function fetchFundingNews({ limit = 15, sinceDays = 7, query } = {}
 
     leads.push({
       companyName: parsed.name,
-      // No `website` on purpose — see the file header. Enrichment/dedupe
-      // fall back to name-matching for these.
+      // No `website` here — the pipeline's resolver (resolveWebsite.js)
+      // guesses the domain from the name and confirms it on the live site.
       notes: parsed.description,
       sourceUrl: link || undefined,
       discoveredAt: pubDate ? new Date(pubDate) : new Date(),
@@ -81,3 +99,11 @@ export async function fetchFundingNews({ limit = 15, sinceDays = 7, query } = {}
 }
 
 export default { key: "funding_news", label: "Funding news (Google News search)", needsBrowser: false, run: fetchFundingNews };
+
+// Same feed, US/global edition: different outlets, different rounds.
+export const fundingNewsGlobal = {
+  key: "funding_news_global",
+  label: "Funding news — global (Google News, US edition)",
+  needsBrowser: false,
+  run: (opts = {}) => fetchFundingNews({ ...opts, region: "US" }),
+};

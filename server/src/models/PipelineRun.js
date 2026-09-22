@@ -10,7 +10,7 @@ const { Schema } = mongoose;
 // That indirection is what lets the Pipeline page keep working unchanged
 // while the actual crawling happens on a machine the server can't reach.
 
-export const PIPELINE_STAGES = ["queued", "discover", "dedupe", "enrich", "score", "draft", "done"];
+export const PIPELINE_STAGES = ["queued", "discover", "dedupe", "verify", "enrich", "score", "draft", "done"];
 
 const pipelineRunSchema = new Schema(
   {
@@ -57,6 +57,9 @@ const pipelineRunSchema = new Schema(
       duplicates: { type: Number, default: 0 },
       created: { type: Number, default: 0 },
       enriched: { type: Number, default: 0 },
+      resolved: { type: Number, default: 0 },
+      verified: { type: Number, default: 0 },
+      rejected: { type: Number, default: 0 },
       scored: { type: Number, default: 0 },
       drafted: { type: Number, default: 0 },
       hot: { type: Number, default: 0 },

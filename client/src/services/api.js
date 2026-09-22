@@ -81,4 +81,8 @@ export const api = {
   rescoreLeads: (useModel = true) => request("/leads/rescore", { method: "POST", body: { useModel } }),
 
   digestLatest: () => request("/digest/latest"),
+
+  companyPulse: () => request("/company/pulse"),
+  officeState: () => request("/company/office-state"),
+  saveOfficeState: (data) => request("/company/office-state", { method: "PUT", body: data }),
 };

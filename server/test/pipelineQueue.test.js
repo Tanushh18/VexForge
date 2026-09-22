@@ -54,10 +54,10 @@ test("validSources returns an empty array for an all-invalid request, not the fu
   assert.deepEqual(validSources(["bogus"]), []);
 });
 
-test("the catalogue has 20 unique keys", () => {
+test("the catalogue has 23 unique keys", () => {
   const keys = SOURCE_CATALOGUE.map((s) => s.key);
-  assert.equal(keys.length, 20);
-  assert.equal(new Set(keys).size, 20);
+  assert.equal(keys.length, 23);
+  assert.equal(new Set(keys).size, 23);
 });
 
 test("the rotation batch size is a positive number no larger than the catalogue", () => {

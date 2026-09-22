@@ -3,7 +3,9 @@ import hnLaunches from "./hnLaunches.js";
 import productHunt from "./productHunt.js";
 import ycDirectory from "./ycDirectory.js";
 import redditLaunches from "./redditLaunches.js";
-import fundingNews from "./fundingNews.js";
+import fundingNews, { fundingNewsGlobal } from "./fundingNews.js";
+import showHn from "./showHn.js";
+import hnHiring from "./hnHiring.js";
 import DIRECTORY_SOURCES from "./directorySites.js";
 
 // The discovery registry. Every adapter reads *public* listing pages only and
@@ -25,7 +27,13 @@ export const SOURCES = [
   redditLaunches, // direct
   ycDirectory, // browser
   fundingNews, // direct
-  ...DIRECTORY_SOURCES, // browser (15)
+  DIRECTORY_SOURCES[0], // browser
+  showHn, // direct
+  DIRECTORY_SOURCES[1], // browser
+  hnHiring, // direct
+  DIRECTORY_SOURCES[2], // browser
+  fundingNewsGlobal, // direct
+  ...DIRECTORY_SOURCES.slice(3), // browser (12)
 ];
 
 export function listSources() {

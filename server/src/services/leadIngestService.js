@@ -50,6 +50,7 @@ export async function ingestLeads(leads = [], { workerId } = {}) {
       sourceUrl: incoming.sourceUrl,
       discoveredAt: incoming.discoveredAt || new Date(),
       sourceNote: incoming.sourceNote,
+      verification: incoming.verification,
       ...scored,
       scoredAt: new Date(),
     });

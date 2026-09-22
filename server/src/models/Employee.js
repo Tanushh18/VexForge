@@ -12,7 +12,7 @@ const employeeSchema = new Schema(
     title: { type: String, required: true },
     department: {
       type: String,
-      enum: ["Executive", "Operations", "HR", "Tech", "Finance", "Support"],
+      enum: ["Executive", "Operations", "Product", "HR", "Tech", "Finance", "Support"],
       required: true,
     },
     level: {

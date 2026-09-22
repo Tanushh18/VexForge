@@ -17,14 +17,16 @@ test("every directory source has the standard {key, label, needsBrowser, run} sh
   }
 });
 
-test("all 20 source keys across the whole registry are unique", () => {
+test("every source key across the whole registry is unique", () => {
   const keys = SOURCES.map((s) => s.key);
-  assert.equal(keys.length, 20);
-  assert.equal(new Set(keys).size, 20, `duplicate keys: ${keys.filter((k, i) => keys.indexOf(k) !== i).join(", ")}`);
+  assert.equal(keys.length, 23);
+  assert.equal(new Set(keys).size, 23, `duplicate keys: ${keys.filter((k, i) => keys.indexOf(k) !== i).join(", ")}`);
 });
 
 test("listSources reports needsBrowser accurately per source", () => {
   const list = listSources();
   const noBrowser = list.filter((s) => !s.needsBrowser).map((s) => s.key);
-  assert.deepEqual(noBrowser.sort(), ["funding_news", "hn_launches", "reddit_launches"]);
+  assert.deepEqual(noBrowser.sort(), [
+    "funding_news", "funding_news_global", "hn_hiring", "hn_launches", "reddit_launches", "show_hn",
+  ]);
 });

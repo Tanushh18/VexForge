@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes, Navigate } from "react-router-dom";
+import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext.jsx";
 import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -12,6 +12,7 @@ import ChatWidget from "./components/ChatWidget.jsx";
 
 function Shell() {
   const { name, logout } = useAuth();
+  const onDashboard = useLocation().pathname === "/";
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -19,7 +20,7 @@ function Shell() {
           <span style={{ width: 22, height: 22, borderRadius: 6, background: "var(--molten)", display: "inline-block" }} />
           <span className="name">Vex<span className="grad">Forge</span> HQ</span>
         </div>
-        <NavLink to="/" end className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Dashboard</NavLink>
+        <NavLink to="/" end className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Live Office</NavLink>
         <NavLink to="/pipeline" className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Lead Pipeline</NavLink>
         <NavLink to="/crm" className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>CRM · Leads</NavLink>
         <NavLink to="/outreach" className={({ isActive }) => `navlink ${isActive ? "active" : ""}`}>Outreach Queue</NavLink>
@@ -31,7 +32,7 @@ function Shell() {
           <button className="logout-btn" onClick={logout}>Sign out</button>
         </div>
       </aside>
-      <main className="main">
+      <main className={`main ${onDashboard ? "main-wide" : ""}`}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/pipeline" element={<Pipeline />} />
@@ -43,7 +44,7 @@ function Shell() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      <ChatWidget />
+      {!onDashboard && <ChatWidget />}
     </div>
   );
 }

@@ -20,9 +20,13 @@ const ORG = [
   { key: "ops_curator", name: "Atlas", title: "Source Curator", department: "Operations", level: "agent", reportsTo: "ops_mgr", avatarColor: "#ff9c5c", avatarInitial: "A", modelRole: "fast", skills: ["source health", "discovery config"] },
   { key: "ops_enrich", name: "Trace", title: "Enrichment Agent", department: "Operations", level: "agent", reportsTo: "ops_mgr", avatarColor: "#ff9c5c", avatarInitial: "T", modelRole: "fast", skills: ["contact lookup", "deep scan"] },
   { key: "ops_ranker", name: "Rank", title: "Lead Ranker", department: "Operations", level: "agent", reportsTo: "ops_mgr", avatarColor: "#ff9c5c", avatarInitial: "R", modelRole: "reasoning", skills: ["lead scoring", "fit assessment"] },
-  { key: "ops_drafter", name: "Quill", title: "Outreach Drafter", department: "Operations", level: "agent", reportsTo: "ops_mgr", avatarColor: "#ff9c5c", avatarInitial: "Q", modelRole: "drafting", skills: ["email drafting", "linkedin drafting"] },
   { key: "ops_sentry", name: "Sentry", title: "Reply Watcher", department: "Operations", level: "agent", reportsTo: "ops_mgr", avatarColor: "#ff9c5c", avatarInitial: "S", modelRole: "fast", skills: ["inbox monitoring", "reply detection"] },
   { key: "ops_coord", name: "Nova", title: "Pipeline Coordinator", department: "Operations", level: "agent", reportsTo: "ops_mgr", avatarColor: "#ff9c5c", avatarInitial: "N", modelRole: "fast", skills: ["crm hygiene", "follow-ups"] },
+
+  { key: "prod_mgr", name: "Iris", title: "Product Manager", department: "Product", level: "manager", reportsTo: "head", avatarColor: "#9b5de5", avatarInitial: "I", modelRole: "reasoning", skills: ["messaging", "positioning"] },
+  { key: "prod_drafter", name: "Quill", title: "Outreach Drafter", department: "Product", level: "agent", reportsTo: "prod_mgr", avatarColor: "#c08bf0", avatarInitial: "Q", modelRole: "drafting", skills: ["email drafting", "linkedin drafting"] },
+  { key: "prod_copy", name: "Muse", title: "Copywriter", department: "Product", level: "agent", reportsTo: "prod_mgr", avatarColor: "#c08bf0", avatarInitial: "M", modelRole: "drafting", skills: ["copy", "tone of voice"] },
+  { key: "prod_design", name: "Pixel", title: "Design & Brand Agent", department: "Product", level: "agent", reportsTo: "prod_mgr", avatarColor: "#c08bf0", avatarInitial: "P", modelRole: "drafting", skills: ["email design", "templates"] },
 
   { key: "hr_mgr", name: "Priya", title: "HR Manager", department: "HR", level: "manager", reportsTo: "head", avatarColor: "#3f4a8a", avatarInitial: "P", modelRole: "reasoning", skills: ["roster", "performance"] },
   { key: "hr_onboard", name: "Sage", title: "Onboarding Agent", department: "HR", level: "agent", reportsTo: "hr_mgr", avatarColor: "#6f79c9", avatarInitial: "S", modelRole: "drafting", skills: ["onboarding", "docs"] },

@@ -17,7 +17,7 @@ const CANDIDATE_PATHS = ["", "/contact", "/contact-us", "/about", "/about-us"];
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 const SKIP_DOMAINS = ["example.com", "sentry.io", "wixpress.com", "godaddy.com"];
 
-function normalizeUrl(domainOrUrl) {
+export function normalizeUrl(domainOrUrl) {
   let url = domainOrUrl.trim();
   if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
   return url.replace(/\/$/, "");
@@ -37,7 +37,7 @@ export function isPrivateIp(ip) {
   return false;
 }
 
-async function assertPublicHost(hostname) {
+export async function assertPublicHost(hostname) {
   if (hostname === "localhost") throw new Error(`Refusing to scan "${hostname}" — not a public host`);
   // dns.lookup() has no built-in timeout and can hang far longer than any
   // HTTP client timeout on a bad resolver path — bound it explicitly so one
@@ -150,7 +150,9 @@ export async function scrapeCompanyContactDeep(domainOrUrl, { timeoutMs = 15000 
 // pass first, only pay for a browser if that came back empty.
 export async function scrapeCompanyContactTiered(domainOrUrl, opts = {}) {
   const fast = await scrapeCompanyContact(domainOrUrl, opts);
-  if (fast.emails.length > 0) return { ...fast, tier: "static" };
+  // `accept` lets a caller say the static emails weren't good enough (e.g.
+  // none passed verification), which is worth a browser pass too.
+  if (fast.emails.length > 0 && (!opts.accept || (await opts.accept(fast.emails)))) return { ...fast, tier: "static" };
   const deep = await scrapeCompanyContactDeep(domainOrUrl, opts);
   return { ...deep, tier: "browser" };
 }

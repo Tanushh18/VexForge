@@ -20,6 +20,7 @@ import publicRoutes from "./routes/public.js";
 import adminRoutes from "./routes/admin.js";
 import digestRoutes from "./routes/digest.js";
 import pipelineRoutes from "./routes/pipeline.js";
+import companyRoutes from "./routes/company.js";
 
 const app = express();
 app.set("trust proxy", 1); // behind a tunnel/reverse proxy — needed for rate-limit to key on the real client IP
@@ -58,6 +59,7 @@ app.use("/api/activity", activityRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/digest", digestRoutes);
 app.use("/api/pipeline", pipelineRoutes);
+app.use("/api/company", companyRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

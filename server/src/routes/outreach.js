@@ -39,7 +39,7 @@ router.post("/generate", async (req, res) => {
   await Lead.findByIdAndUpdate(lead._id, { stage: "outreach_drafted" });
 
   if (agent) await setAgentStatus(agent._id, { status: "idle", currentTask: "Standing by — draft ready for review", bumpCompleted: true });
-  await logActivity({ actor: agent?._id, actorName: agent?.name || "Quill", department: "Operations", action: `${channel} draft generated`, detail: lead.companyName, entityType: "OutreachMessage", entityId: msg._id });
+  await logActivity({ actor: agent?._id, actorName: agent?.name || "Quill", department: "Product", action: `${channel} draft generated`, detail: lead.companyName, entityType: "OutreachMessage", entityId: msg._id });
   await notify(`✍️ New ${channel} draft for *${lead.companyName}* — awaiting your approval.`);
 
   res.status(201).json(msg);
@@ -56,10 +56,50 @@ router.patch("/:id", async (req, res) => {
   res.json(msg);
 });
 
+// Transmits an approved email draft over SMTP and moves the lead forward.
+// Shared by approve (which sends straight away) and the manual send button
+// (for drafts that were approved while SMTP was down or the cap was hit).
+async function deliverEmail(msg) {
+  await assertSendAllowed();
+  const agent = await Employee.findOne({ title: /Outreach Drafter/i });
+  if (agent) await setAgentStatus(agent._id, { status: "working", currentTask: `Sending email to ${msg.lead.companyName}` });
+  try {
+    await sendApprovedEmail({ to: msg.lead.contactEmail, subject: msg.subject, text: msg.body, html: msg.body.replace(/\n/g, "<br/>") });
+  } finally {
+    if (agent) await setAgentStatus(agent._id, { status: "idle", currentTask: "Standing by", bumpCompleted: true });
+  }
+  msg.status = "sent";
+  msg.sentAt = new Date();
+  msg.sentVia = "auto_email";
+  await msg.save();
+  await Lead.findByIdAndUpdate(msg.lead._id, { stage: "outreach_sent" });
+  await logActivity({ actor: agent?._id, actorName: agent?.name || "Quill", department: "Product", action: "Email sent", detail: `${msg.lead.companyName} <${msg.lead.contactEmail}>`, entityType: "OutreachMessage", entityId: msg._id });
+  await notify(`📨 Email sent to *${msg.lead.companyName}*.`);
+  return msg;
+}
+
+// Approving an email draft sends it immediately when SMTP is configured and
+// the lead has an address. If sending can't happen (no SMTP, no address, cap
+// reached, SMTP error) the draft stays approved and `sendError` says why, so
+// the Outreach page can offer the manual path.
 router.post("/:id/approve", async (req, res) => {
-  const msg = await OutreachMessage.findByIdAndUpdate(req.params.id, { status: "approved" }, { new: true }).populate("lead");
+  const msg = await OutreachMessage.findById(req.params.id).populate("lead");
+  if (!msg) return res.status(404).json({ error: "Not found" });
+  if (msg.status === "sent") return res.json(msg);
+  msg.status = "approved";
+  await msg.save();
   await logActivity({ actorName: "Founder", department: "Executive", action: "Outreach approved", detail: msg.lead?.companyName, entityType: "OutreachMessage", entityId: msg._id });
-  res.json(msg);
+
+  if (msg.channel !== "email") return res.json(msg);
+  if (!emailIsConfigured()) return res.json({ ...msg.toObject(), sendError: "SMTP isn't configured — send it manually." });
+  if (!msg.lead?.contactEmail) return res.json({ ...msg.toObject(), sendError: "Lead has no contact email on file." });
+  try {
+    await deliverEmail(msg);
+    res.json(msg);
+  } catch (err) {
+    await logActivity({ actorName: "Quill", department: "Product", action: "Email send failed", detail: `${msg.lead.companyName}: ${err.message}`, entityType: "OutreachMessage", entityId: msg._id });
+    res.json({ ...msg.toObject(), sendError: err.message });
+  }
 });
 
 router.post("/:id/reject", async (req, res) => {
@@ -77,18 +117,10 @@ router.post("/:id/send-email", async (req, res) => {
   if (!msg.lead?.contactEmail) return res.status(400).json({ error: "Lead has no contact email on file" });
 
   try {
-    await assertSendAllowed();
+    await deliverEmail(msg);
   } catch (err) {
-    return res.status(err.statusCode || 429).json({ error: err.message, quota: err.quota });
+    return res.status(err.statusCode || 502).json({ error: err.message, quota: err.quota });
   }
-
-  await sendApprovedEmail({ to: msg.lead.contactEmail, subject: msg.subject, text: msg.body, html: msg.body.replace(/\n/g, "<br/>") });
-  msg.status = "sent";
-  msg.sentAt = new Date();
-  msg.sentVia = "auto_email";
-  await msg.save();
-  await Lead.findByIdAndUpdate(msg.lead._id, { stage: "outreach_sent" });
-  await logActivity({ actorName: "Founder", department: "Operations", action: "Email sent", detail: msg.lead.companyName, entityType: "OutreachMessage", entityId: msg._id });
   res.json(msg);
 });
 

@@ -38,6 +38,16 @@ const leadSchema = new Schema(
     score: { type: Number, default: 0, index: true },
     scoreBand: { type: String, enum: ["hot", "warm", "cold"], default: "cold" },
     fitReason: { type: String },
+    // What the worker proved about this lead before delivering it.
+    verification: {
+      siteOk: Boolean,
+      siteTitle: String,
+      emailOk: Boolean,
+      mx: String,
+      domainAgeDays: Number,
+      seenIn: [String],
+      verifiedAt: Date,
+    },
     scoredAt: { type: Date },
     stage: {
       type: String,

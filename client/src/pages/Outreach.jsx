@@ -11,6 +11,7 @@ export default function Outreach() {
   const [genChannel, setGenChannel] = useState("email");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [emailConfigured, setEmailConfigured] = useState(false);
 
   async function load() {
@@ -34,7 +35,15 @@ export default function Outreach() {
 
   async function act(fn, id) {
     setBusy(true);
-    try { await fn(id); await load(); } catch (err) { setError(err.message); } finally { setBusy(false); }
+    setError("");
+    setNotice("");
+    try {
+      const res = await fn(id);
+      if (res?.sendError) setError(`Approved, but not sent: ${res.sendError}`);
+      else if (res?.status === "sent" && res.sentVia === "auto_email") setNotice(`Email sent to ${res.lead?.contactEmail || "the lead"}.`);
+      window.dispatchEvent(new Event("vf:refresh"));
+      await load();
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
 
   function editField(id, field, value) {
@@ -56,8 +65,8 @@ export default function Outreach() {
       <div className="page-head">
         <div className="page-title">Outreach Queue</div>
         <div className="page-sub">
-          Every message is AI-drafted, then sits here until you approve it. Email can send automatically once
-          SMTP is configured; LinkedIn never auto-sends — approving just gives you a ready-to-paste message and
+          Every message is AI-drafted, then sits here until you approve it. Approving an email draft sends it
+          straight away over SMTP; LinkedIn never auto-sends — approving just gives you a ready-to-paste message and
           a direct search link.
         </div>
       </div>
@@ -85,6 +94,7 @@ export default function Outreach() {
       </div>
 
       {error && <div className="error-box" style={{ marginBottom: 14 }}>{error}</div>}
+      {notice && <div className="ok-box" style={{ marginBottom: 14 }}>{notice}</div>}
 
       <div className="tabs">
         {TABS.map((t) => (
@@ -134,7 +144,9 @@ export default function Outreach() {
                 {m.status === "draft" && (
                   <>
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => saveEdit(m._id)}>Save edit</button>
-                    <button className="btn btn-molten btn-sm" disabled={busy} onClick={() => act(api.approveOutreach, m._id)}>Approve</button>
+                    <button className="btn btn-molten btn-sm" disabled={busy} onClick={() => act(api.approveOutreach, m._id)}>
+                      {m.channel === "email" && emailConfigured && m.lead?.contactEmail ? "Approve & send" : "Approve"}
+                    </button>
                     <button className="btn btn-danger btn-sm" disabled={busy} onClick={() => act(api.rejectOutreach, m._id)}>Reject</button>
                   </>
                 )}

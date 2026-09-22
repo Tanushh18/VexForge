@@ -1,6 +1,6 @@
 name: Diagnose lead sources
 
-# Tests all 20 discovery sources against the real internet — for when there's
+# Tests all 23 discovery sources against the real internet — for when there's
 # no always-on machine yet to run the worker locally. No secrets, no
 # deployed API, no database: this only exercises the scraping code
 # (worker/src/leadSources/) and prints a pass/fail table for each source.
@@ -8,14 +8,14 @@ name: Diagnose lead sources
 #
 # Run it: Actions tab → "Diagnose lead sources" → Run workflow. Optionally
 # type specific source keys (space-separated, e.g. "betalist uneed
-# microlaunch") to test only those instead of all 20 — useful once you've
+# microlaunch") to test only those instead of all 23 — useful once you've
 # already fixed the obvious failures and want to recheck a handful.
 
 on:
   workflow_dispatch:
     inputs:
       sources:
-        description: "Source keys to test (space-separated). Leave blank for all 20."
+        description: "Source keys to test (space-separated). Leave blank for all 23."
         required: false
         default: ""
 

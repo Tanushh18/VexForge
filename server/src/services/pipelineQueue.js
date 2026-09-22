@@ -14,17 +14,20 @@ import { workerStatus } from "./workerRegistry.js";
 // Order matters here: it's kept in the same direct-fetch/Playwright
 // interleaving as worker/src/leadSources/index.js, so a contiguous rotation
 // slice (see pickRotationBatch below) naturally samples both kinds rather
-// than exhausting the 3 direct-fetch sources before ever reaching a browser
+// than exhausting the direct-fetch sources before ever reaching a browser
 // one, or vice versa.
 export const SOURCE_CATALOGUE = [
   { key: "hn_launches", label: "Hacker News launches", needsBrowser: false },
   { key: "product_hunt", label: "Product Hunt launches", needsBrowser: true },
   { key: "reddit_launches", label: "Reddit launches (r/startups, r/SaaS)", needsBrowser: false },
   { key: "yc_directory", label: "Y Combinator directory (funded + hiring)", needsBrowser: true },
-  { key: "funding_news", label: "Funding news (Google News search) — no website, most get dropped by the mandatory-contact filter", needsBrowser: false },
+  { key: "funding_news", label: "Funding news — India (Google News); website found by name", needsBrowser: false },
   { key: "betalist", label: "BetaList — startups launching", needsBrowser: true },
+  { key: "show_hn", label: "Show HN — products just shipped (with traction)", needsBrowser: false },
   { key: "betapage", label: "BetaPage — startup launches", needsBrowser: true },
+  { key: "hn_hiring", label: "HN Who's Hiring — startups hiring engineers now", needsBrowser: false },
   { key: "indiehackers_products", label: "Indie Hackers — products", needsBrowser: true },
+  { key: "funding_news_global", label: "Funding news — global (Google News, US edition)", needsBrowser: false },
   { key: "saashub", label: "SaaSHub — newest SaaS tools", needsBrowser: true },
   { key: "f6s", label: "F6S — startup directory", needsBrowser: true },
   { key: "startupranking", label: "StartupRanking — newest startups", needsBrowser: true },
@@ -42,16 +45,18 @@ export const SOURCE_CATALOGUE = [
 export const DEFAULTS = {
   perSource: Number(process.env.PIPELINE_PER_SOURCE || 12),
   enrich: true,
-  useModelScoring: true,
+  // Scoring is deterministic from verified facts; the model pass is opt-in.
+  useModelScoring: process.env.PIPELINE_MODEL_SCORING === "true",
+  minDeliverScore: Number(process.env.PIPELINE_MIN_DELIVER_SCORE || 45),
   autoDraftTop: Number(process.env.PIPELINE_AUTO_DRAFT_TOP || 5),
   minDraftScore: Number(process.env.PIPELINE_MIN_DRAFT_SCORE || 60),
 };
 
-// 20 sources is a lot to walk in one run — sequentially, on purpose, since a
+// 23 sources is a lot to walk in one run — sequentially, on purpose, since a
 // polite crawler doesn't hit a handful of sites in parallel from one IP. A
 // batch of 8 keeps a single run's wall-clock time reasonable; the cursor
 // below advances each run so every source gets covered roughly every
-// ceil(20/8) = 3 runs, rather than either hammering all 20 every time or
+// ceil(23/8) = 3 runs, rather than either hammering all 20 every time or
 // requiring you to hand-pick a subset yourself.
 export const ROTATION_BATCH_SIZE = Number(process.env.PIPELINE_ROTATION_BATCH_SIZE || 8);
 

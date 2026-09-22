@@ -27,6 +27,20 @@ export const SIGNAL_WEIGHTS = {
   no_contact_path: -20, // no email and no site to scrape one from
   too_large: -15, // enterprise procurement is not this studio's lane
   agency_or_competitor: -25, // another studio is not a client
+
+  // Verification evidence (worker/src/verify.js) — each one observed on the
+  // live site, its DNS, or its RDAP registration record.
+  multi_source: 12, // listed in several independent places: real and active
+  new_domain: 12, // domain under a year old: still picking its vendors
+  prelaunch: 8, // "coming soon" page: needs the product built
+  outdated_site: 10, // copyright 2+ years stale: a rebuild conversation
+  site_builder: 6, // WordPress/Wix/Squarespace: outgrowing it is common
+  no_https: 5, // an easy, concrete first fix to open with
+  active_product: 4, // pricing/signup present: an operating business
+  email_on_company_domain: 8, // reaches the company, not a stale personal box
+  personal_inbox: 8, // a named person reads it, not a shared queue
+  free_mail: -4, // reachable, but weaker than a company address
+  bot_protected: -3, // alive, but the content couldn't be checked
 };
 
 // Industries VexForge has live proof in (WeCode, GgnHome) plus the adjacent
