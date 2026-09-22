@@ -2,6 +2,8 @@ import { withBrowser, safeSource } from "./browser.js";
 import hnLaunches from "./hnLaunches.js";
 import productHunt from "./productHunt.js";
 import ycDirectory from "./ycDirectory.js";
+import redditLaunches from "./redditLaunches.js";
+import fundingNews from "./fundingNews.js";
 
 // The discovery registry. Every adapter reads *public* listing pages only and
 // returns partial leads — company name, website, a description, and the
@@ -12,7 +14,7 @@ import ycDirectory from "./ycDirectory.js";
 // Adding a source means adding one module here with the same shape:
 //   { key, label, needsBrowser, run(contextOrOptions, options) }
 
-export const SOURCES = [hnLaunches, productHunt, ycDirectory];
+export const SOURCES = [hnLaunches, productHunt, ycDirectory, redditLaunches, fundingNews];
 
 export function listSources() {
   return SOURCES.map(({ key, label, needsBrowser }) => ({ key, label, needsBrowser }));

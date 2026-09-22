@@ -4,6 +4,8 @@ import { parseLaunchTitle, isUsableCompanyUrl } from "../src/leadSources/hnLaunc
 import { pickProductLinks, slugToName } from "../src/leadSources/productHunt.js";
 import { pickCompanySlugs, directoryUrl } from "../src/leadSources/ycDirectory.js";
 import { cleanOutboundUrl, isPlatformDomain } from "../src/leadSources/browser.js";
+import { isUsableCompanyUrl as redditUsableUrl, cleanTitle } from "../src/leadSources/redditLaunches.js";
+import { stripPublisher, parseFundingTitle } from "../src/leadSources/fundingNews.js";
 
 test("parseLaunchTitle pulls the company name out of a Launch HN title", () => {
   const { name, description } = parseLaunchTitle("Launch HN: Acme — AI scheduling for dentists");
@@ -79,4 +81,47 @@ test("isPlatformDomain matches subdomains of a platform host", () => {
   assert.equal(isPlatformDomain("https://cdn.producthunt.com/x", ["producthunt.com"]), true);
   assert.equal(isPlatformDomain("https://acme.example", ["producthunt.com"]), false);
   assert.equal(isPlatformDomain(null, ["producthunt.com"]), true);
+});
+
+// --- redditLaunches ---------------------------------------------------------
+
+test("reddit isUsableCompanyUrl rejects links back into Reddit or media hosts", () => {
+  assert.equal(redditUsableUrl("https://acme.example"), true);
+  assert.equal(redditUsableUrl("https://i.redd.it/abc123.png"), false);
+  assert.equal(redditUsableUrl("https://www.reddit.com/r/startups/comments/x"), false);
+  assert.equal(redditUsableUrl(undefined), false);
+});
+
+test("reddit cleanTitle strips launch-phrase noise from a post title", () => {
+  assert.equal(cleanTitle("I built Acme - feedback welcome!"), "Acme");
+  assert.equal(cleanTitle("Launching Acme: AI for dentists"), "Acme: AI for dentists");
+  assert.equal(cleanTitle("Acme"), "Acme");
+});
+
+test("reddit cleanTitle caps length so a rambling title doesn't become the company name", () => {
+  const long = "We built " + "x".repeat(200);
+  assert.ok(cleanTitle(long).length <= 120);
+});
+
+// --- fundingNews -------------------------------------------------------------
+
+test("stripPublisher removes the trailing ' - Publisher' Google News appends", () => {
+  assert.equal(stripPublisher("Acme raises $2M seed round - TechCrunch"), "Acme raises $2M seed round");
+  assert.equal(stripPublisher("Acme raises $2M"), "Acme raises $2M"); // no publisher suffix present
+});
+
+test("parseFundingTitle extracts the company name before the funding verb", () => {
+  const result = parseFundingTitle("Acme Robotics raises $2M seed round to build widgets - TechCrunch");
+  assert.equal(result.name, "Acme Robotics");
+  assert.equal(result.description, "Acme Robotics raises $2M seed round to build widgets");
+});
+
+test("parseFundingTitle handles other funding verbs (secures, bags, lands)", () => {
+  assert.equal(parseFundingTitle("Acme secures ₹15 Crore in Series A - Entrackr").name, "Acme");
+  assert.equal(parseFundingTitle("Beta bags $500K pre-seed - YourStory").name, "Beta");
+});
+
+test("parseFundingTitle returns null for a headline with no funding verb", () => {
+  assert.equal(parseFundingTitle("Acme launches new product - TechCrunch"), null);
+  assert.equal(parseFundingTitle("Just a regular headline with no company"), null);
 });

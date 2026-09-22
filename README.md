@@ -48,8 +48,14 @@ This is the part that finds you clients. One run, five stages:
 ```
 1. Discover   public listing sites → company name, website, timing signals
                 • Hacker News launches   (official Algolia API, no browser)
+                • Reddit launches        (r/startups, r/SaaS — Reddit's public .json API, no browser)
+                • Funding news           (Google News RSS search, no browser — no website field, see below)
                 • Product Hunt           (Playwright — the listing is client-rendered)
                 • Y Combinator directory (Playwright — funded, filtered to "is hiring")
+
+  3 of 5 sources need no browser at all — only Product Hunt and YC render client-side. A run
+  selecting just the browser-free sources needs no Chromium and works on a GitHub Actions
+  runner with no extra setup; see worker/README.md.
 2. Enrich     find a contact email on the company's OWN site (static pass, then a
               headless browser only if that comes back empty)
 3. Score      deterministic signal weights, then a ±15 adjustment from the local
@@ -101,6 +107,12 @@ and a description. Contact details never come from these sites — they come fro
 homepage/contact/about pages in the enrichment step, exactly as they do for a lead you add by hand.
 No LinkedIn, no login-gated directories, no bulk harvesting, and a sequential one-page-at-a-time
 crawl rather than a parallel scraper farm.
+
+One exception worth calling out: **funding-news leads carry no `website` field.** A headline like
+"Acme raises $2M" identifies the company but not which of several plausible domains is really
+theirs, so guessing one would risk enriching (or emailing) the wrong company. These leads still
+score — `just_funded` is the single highest-weighted signal — but sit with the `no_contact_path`
+penalty until you find the domain yourself, or a later scan on the Leads/Admin page fills it in.
 
 ## Local models
 

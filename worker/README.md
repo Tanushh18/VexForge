@@ -19,6 +19,14 @@ where the browser is — which is this process.
 So the worker does every stage that needs a browser or a model, and the
 deployed API owns everything else.
 
+**Not every source needs the browser, though.** Only Product Hunt and the YC
+directory render client-side; Hacker News launches, Reddit launches, and
+funding news are all plain HTTP calls to public APIs/feeds. Selecting only
+those three means the whole run skips Chromium — which is what makes a
+Chromium-free environment (a GitHub Actions runner, for instance) able to run
+a real discovery pass, just without Product Hunt/YC coverage. See "Running it
+without a browser" below.
+
 ```
   YOUR MACHINE                          DEPLOYED
   ┌──────────────────────┐              ┌────────────────────────┐
@@ -95,6 +103,30 @@ than leaving the loop resident:
 Note that a scheduled *job* still has to be queued by the server
 (`PIPELINE_SCHEDULE_ENABLED=true`) — or you just click "Start run" in the
 console and the worker picks it up on its next poll.
+
+## Running it without a browser
+
+Only Product Hunt and the YC directory need Chromium; Hacker News launches,
+Reddit launches, and funding news are all plain HTTP. If the job you claim
+only asks for those three, this process never calls `chromium.launch()` — the
+`playwright` package imports fine with no browser binaries installed, it just
+can't open one. So on a host where installing Chromium is inconvenient or
+impossible (a CI runner, a very small VM), you can skip
+`npx playwright install chromium` entirely and still run a real discovery pass:
+
+```bash
+npm install                          # no playwright install step
+npm run once                         # as long as the queued job excludes
+                                      # product_hunt and yc_directory
+```
+
+Queue a browser-free run from the console's Lead Pipeline page by leaving
+those two sources unchecked, or pass `sources` explicitly when calling
+`POST /api/pipeline/run`. This is what makes a scheduled GitHub Actions
+workflow practical: check out the repo, `npm ci` in `worker/` (no Chromium
+download), `npm run once`, free, no server to keep alive. You lose Product
+Hunt/YC coverage on those runs — run the worker locally with the full
+`--with-deps chromium` install occasionally to pick those back up.
 
 ## What you'll see
 

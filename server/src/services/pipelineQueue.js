@@ -12,6 +12,8 @@ export const SOURCE_CATALOGUE = [
   { key: "hn_launches", label: "Hacker News launches", needsBrowser: false },
   { key: "product_hunt", label: "Product Hunt launches", needsBrowser: true },
   { key: "yc_directory", label: "Y Combinator directory (funded + hiring)", needsBrowser: true },
+  { key: "reddit_launches", label: "Reddit launches (r/startups, r/SaaS)", needsBrowser: false },
+  { key: "funding_news", label: "Funding news (Google News search)", needsBrowser: false },
 ];
 
 export const DEFAULTS = {
