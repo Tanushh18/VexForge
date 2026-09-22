@@ -69,6 +69,7 @@ export const api = {
   createScrapeJob: (body) => request("/admin/scrape-jobs", { method: "POST", body }),
 
   models: () => request("/admin/models"),
+  testModel: () => request("/admin/models/test", { method: "POST" }),
   settings: () => request("/admin/settings"),
   jobs: () => request("/admin/jobs"),
   runJob: (key) => request(`/admin/jobs/${key}/run`, { method: "POST" }),

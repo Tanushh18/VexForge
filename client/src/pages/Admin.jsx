@@ -12,6 +12,20 @@ export default function Admin() {
   const [form, setForm] = useState({ companyName: "", domain: "", industry: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [modelTest, setModelTest] = useState(null);
+  const [modelTestBusy, setModelTestBusy] = useState(false);
+
+  async function testModel() {
+    setModelTestBusy(true);
+    setModelTest(null);
+    try {
+      setModelTest(await api.testModel());
+    } catch (err) {
+      setModelTest({ ok: false, error: err.message });
+    } finally {
+      setModelTestBusy(false);
+    }
+  }
 
   async function load() {
     setJobs(await api.scrapeJobs());
@@ -94,6 +108,25 @@ export default function Admin() {
             </table>
             <div className="hint" style={{ marginTop: 8 }}>
               {models.keyCount} Groq key(s) configured · currently using key #{(models.activeKeyIndex ?? 0) + 1}
+            </div>
+
+            <div style={{ marginTop: 14, borderTop: "1px solid var(--border, #2a2a2a)", paddingTop: 14 }}>
+              <button className="btn btn-sm" onClick={testModel} disabled={modelTestBusy}>
+                {modelTestBusy ? "Asking Groq…" : "Test model"}
+              </button>
+              {modelTest && (
+                <div style={{ marginTop: 10 }}>
+                  {modelTest.ok ? (
+                    <div>
+                      <span className="pill pill-done">working</span>{" "}
+                      <span className="hint">{modelTest.model} responded in {modelTest.ms}ms</span>
+                      <div className="hint" style={{ marginTop: 6, fontStyle: "italic" }}>&ldquo;{modelTest.text}&rdquo;</div>
+                    </div>
+                  ) : (
+                    <div className="error-box">{modelTest.error}</div>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}

@@ -5,7 +5,7 @@ import Employee, { setAgentStatus } from "../models/Employee.js";
 import { logActivity } from "../models/ActivityLog.js";
 import { requireAuth } from "../middleware/auth.js";
 
-import { modelStatus, refreshModelHealth } from "../../../shared/modelRouter.js";
+import { modelStatus, refreshModelHealth, complete } from "../../../shared/modelRouter.js";
 import { jobStatus, runJobNow } from "../services/jobRegistry.js";
 import { scoreLead } from "../../../shared/scoring.js";
 import { getSettings } from "../models/Settings.js";
@@ -19,6 +19,24 @@ router.use(requireAuth);
 router.get("/models", async (_req, res) => {
   await refreshModelHealth();
   res.json(modelStatus());
+});
+
+// Fires a real completion through the "fast" role so the Admin page can show
+// actual model output, not just "a key is configured" — a key can be present
+// and still fail (wrong value, rate-limited, model renamed on Groq's end),
+// and the status panel alone can't tell those apart from a working setup.
+router.post("/models/test", async (_req, res) => {
+  const started = Date.now();
+  try {
+    const text = await complete("fast", {
+      system: "Reply with a short, friendly one-sentence confirmation that you're working.",
+      prompt: "Are you working?",
+      timeoutMs: 20000,
+    });
+    res.json({ ok: true, text, model: modelStatus().roles.find((r) => r.role === "fast")?.model, ms: Date.now() - started });
+  } catch (err) {
+    res.status(502).json({ ok: false, error: err.message, ms: Date.now() - started });
+  }
 });
 
 // Runtime settings that shouldn't need a redeploy to change (just the
