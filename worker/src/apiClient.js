@@ -10,9 +10,15 @@ const WORKER_ID = process.env.WORKER_ID || `worker-${process.pid}`;
 
 export const config = { apiUrl: API_URL, workerId: WORKER_ID };
 
-if (!WORKER_API_KEY) {
-  console.error("[worker] WORKER_API_KEY is not set — copy .env.example to .env and fill it in.");
-  process.exit(1);
+// Checked here rather than exiting at import time: a process.exit() as a
+// module-load side effect means anything that imports this module — a test,
+// a future script that only needs config — takes the whole process down with
+// it. index.js calls this once, deliberately, right before starting the loop.
+export function assertConfigured() {
+  if (!WORKER_API_KEY) {
+    console.error("[worker] WORKER_API_KEY is not set — copy .env.example to .env and fill it in.");
+    process.exit(1);
+  }
 }
 
 const http = axios.create({

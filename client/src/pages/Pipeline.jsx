@@ -155,6 +155,20 @@ export default function Pipeline() {
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
 
+  // Omits `sources` entirely (as opposed to sending the checked list) so the
+  // server treats this as "you decide" and picks the next slice off the
+  // rotation cursor — the same path the scheduled job uses. 20 sources is a
+  // lot to crawl in one sitting; this is the manual equivalent of letting the
+  // nightly run work through them a batch at a time instead of all at once.
+  async function startRotation() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.runPipeline({ ...opts });
+      await load();
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  }
+
   async function rescore() {
     setBusy(true);
     setError("");
@@ -231,12 +245,20 @@ export default function Pipeline() {
 
         <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
           <button className="btn btn-molten" disabled={busy || status?.running || !selected.length} onClick={start}>
-            {status?.running ? "Run in progress…" : busy ? "Queueing…" : "Start run"}
+            {status?.running ? "Run in progress…" : busy ? "Queueing…" : `Start run (${selected.length} selected)`}
+          </button>
+          <button className="btn" disabled={busy || status?.running} onClick={startRotation} title="Runs the next batch off the rotation cursor — same picker the nightly job uses">
+            Run next batch (rotation)
           </button>
           <button className="btn" disabled={busy || status?.running} onClick={rescore}>Re-score CRM</button>
           {!status?.worker?.anyOnline && status?.worker?.configured && (
             <span className="hint">Queueing works, but nothing runs until a worker is online.</span>
           )}
+        </div>
+        <div className="hint" style={{ marginTop: 8 }}>
+          20 sources total — checking specific ones above always runs exactly those. "Run next
+          batch" ignores the checkboxes and works through all 20 a few at a time across runs,
+          the same picker the scheduled job uses.
         </div>
       </div>
 

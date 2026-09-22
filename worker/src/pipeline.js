@@ -24,6 +24,18 @@ import { reportProgress, deliverLeads, finishRun, finishScan } from "./apiClient
 // that dies halfway still leaves you the companies it already found.
 const DELIVER_BATCH = 5;
 
+// A contact email is mandatory: a lead the CRM can never send to is dead
+// weight in the pipeline, not a prospect to review later. Applied after the
+// full tiered enrichment pass (static site scan, Playwright fallback if that
+// found nothing), so this is the true floor — nothing left to try before
+// dropping it. Pure and separately testable from the network-heavy run.
+export function partitionByContact(leads) {
+  const withContact = [];
+  const dropped = [];
+  for (const lead of leads) (lead.contactEmail ? withContact : dropped).push(lead);
+  return { withContact, dropped };
+}
+
 export async function runDiscoveryJob(job) {
   const runId = job.id;
   const opts = job.options || {};
@@ -72,10 +84,32 @@ export async function runDiscoveryJob(job) {
       }
     }
 
+    // --- Mandatory contact filter -------------------------------------------
+    // A lead with no email survived discovery and a full enrichment pass
+    // (static, then Playwright) with nothing to reach it by — it never
+    // becomes a prospect, so it never reaches the CRM. This also removes
+    // funding-news leads outright: that source carries no `website` at all
+    // (a headline can't reliably say which domain is really the company's),
+    // so enrichment never runs on them and they're dropped here by design.
+    const { withContact, dropped } = partitionByContact(candidates);
+    if (dropped.length) {
+      await progress("enrich", `Dropping ${dropped.length} lead(s) with no reachable contact`, 54);
+    }
+
+    if (!withContact.length) {
+      await finishRun(runId, {
+        status: "done",
+        summary: `Found ${candidates.length} companies, but none had a reachable contact email after enrichment.`,
+        sourceResults,
+        stats: { discovered: stats.discovered, enriched: stats.enriched, scored: 0 },
+      });
+      return stats;
+    }
+
     // --- 3. Score ----------------------------------------------------------
     const useModel = opts.useModelScoring !== false && llmReady();
-    for (const [i, lead] of candidates.entries()) {
-      await progress("score", `Scoring ${lead.companyName} (${i + 1}/${candidates.length})`, 55 + Math.round((i / candidates.length) * 20));
+    for (const [i, lead] of withContact.entries()) {
+      await progress("score", `Scoring ${lead.companyName} (${i + 1}/${withContact.length})`, 55 + Math.round((i / withContact.length) * 20));
       // eslint-disable-next-line no-await-in-loop
       const scored = useModel ? await scoreLeadWithModel(lead) : scoreLead(lead);
       Object.assign(lead, scored);
@@ -87,8 +121,8 @@ export async function runDiscoveryJob(job) {
     // Drafting for a lead with no email just fills the queue with messages
     // that can never be sent.
     const minScore = opts.minDraftScore ?? 60;
-    const draftable = candidates
-      .filter((l) => l.contactEmail && l.score >= minScore)
+    const draftable = withContact
+      .filter((l) => l.score >= minScore)
       .sort((a, b) => b.score - a.score)
       .slice(0, opts.autoDraftTop ?? 5);
 
@@ -109,9 +143,9 @@ export async function runDiscoveryJob(job) {
     }
 
     // --- 5. Deliver --------------------------------------------------------
-    await progress("draft", `Delivering ${candidates.length} leads…`, 92);
-    for (let i = 0; i < candidates.length; i += DELIVER_BATCH) {
-      const batch = candidates.slice(i, i + DELIVER_BATCH);
+    await progress("draft", `Delivering ${withContact.length} leads…`, 92);
+    for (let i = 0; i < withContact.length; i += DELIVER_BATCH) {
+      const batch = withContact.slice(i, i + DELIVER_BATCH);
       // eslint-disable-next-line no-await-in-loop
       const delivered = await deliverLeads(runId, batch);
       stats.created += delivered.created;
@@ -119,7 +153,7 @@ export async function runDiscoveryJob(job) {
       stats.hot += delivered.hot;
     }
 
-    const summary = await summarizeBatch(candidates.filter((l) => l.score >= minScore));
+    const summary = await summarizeBatch(withContact.filter((l) => l.score >= minScore));
     // The server has been counting created/duplicates/drafted as each batch
     // landed, so only the counters it can't see are sent here.
     await finishRun(runId, {

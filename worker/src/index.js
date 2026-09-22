@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { pollForJob, config } from "./apiClient.js";
+import { pollForJob, config, assertConfigured } from "./apiClient.js";
 import { runDiscoveryJob, runDeepScanJob } from "./pipeline.js";
 import { refreshModelHealth, modelStatus } from "../../shared/modelRouter.js";
 
@@ -35,6 +35,8 @@ async function handle(job) {
 }
 
 async function loop() {
+  assertConfigured();
+
   // Report what's actually available once at startup, since "the worker is
   // running but every draft is empty" is otherwise a confusing way to find
   // out a model was never pulled.

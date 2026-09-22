@@ -43,28 +43,68 @@ See **[worker/README.md](worker/README.md)** to run it.
 
 ## The lead pipeline
 
-This is the part that finds you clients. One run, five stages:
+This is the part that finds you clients. One run, six stages:
 
 ```
-1. Discover   public listing sites → company name, website, timing signals
-                • Hacker News launches   (official Algolia API, no browser)
-                • Reddit launches        (r/startups, r/SaaS — Reddit's public .json API, no browser)
-                • Funding news           (Google News RSS search, no browser — no website field, see below)
-                • Product Hunt           (Playwright — the listing is client-rendered)
-                • Y Combinator directory (Playwright — funded, filtered to "is hiring")
-
-  3 of 5 sources need no browser at all — only Product Hunt and YC render client-side. A run
-  selecting just the browser-free sources needs no Chromium and works on a GitHub Actions
-  runner with no extra setup; see worker/README.md.
+1. Discover   20 public listing sites → company name, website, timing signals
 2. Enrich     find a contact email on the company's OWN site (static pass, then a
               headless browser only if that comes back empty)
-3. Score      deterministic signal weights, then a ±15 adjustment from the local
+3. Filter     MANDATORY — a lead with no email after full enrichment is dropped,
+              never reaches the CRM. See "Contact is mandatory" below.
+4. Score      deterministic signal weights, then a ±15 adjustment from the local
               reasoning model — see shared/scoring.js
-4. Draft      outreach for the top N scoring leads that actually have an email
-5. Deliver    POST to the API, which dedupes against the CRM and stores
+5. Draft      outreach for the top N scoring leads that made it past the filter
+6. Deliver    POST to the API, which dedupes against the CRM and stores
 ```
 
-Stages 1-4 run on the worker; stage 5 is where the deployed side takes over.
+Stages 1-5 run on the worker; stage 6 is where the deployed side takes over.
+
+### 20 discovery sources, two fetch strategies in rotation
+
+| Fetch strategy | Count | Sources |
+|---|---|---|
+| **Direct** (HTTP/API, no browser) | 3 | Hacker News launches (Algolia API), Reddit launches (r/startups, r/SaaS — Reddit's public `.json` API), Funding news (Google News RSS) |
+| **Playwright** (client-rendered listings) | 17 | Product Hunt, Y Combinator directory, plus 15 launch/directory/hiring boards — BetaList, BetaPage, Indie Hackers, SaaSHub, F6S, StartupRanking, Launching Next, DevHunt, Peerlist, Wellfound, LibHunt, OpenAlternative, AlternativeTo, Uneed, Microlaunch |
+
+The 15 Playwright sources share **one generic harvester**
+(`worker/src/leadSources/genericDirectory.js`) rather than 15 bespoke
+per-site scrapers: it collects every outbound `<a href>` on a listing page and
+its link text as a company-name candidate, filtering out social/platform
+links and UI chrome ("Visit", "Sign up", …). That's the same technique
+already used for Product Hunt and YC — match by link *shape*, not a specific
+CSS class — generalized so one well-tested extractor backs many configs. Each
+site is just a `{key, url, platformHosts}` entry in
+`worker/src/leadSources/directorySites.js`; a listing that's moved or added a
+login wall returns 0 results rather than breaking the run (`safeSource()`
+isolates every source's failures from the rest).
+
+**Runs rotate through the 20 rather than crawling all of them every time** —
+a polite, sequential 20-site crawl in one sitting is a long run and a lot of
+load on sites you don't want to look like a bot to. `PIPELINE_ROTATION_BATCH_SIZE`
+(default 8) sources are picked per run, off a cursor persisted in the
+database (`Settings.rotationCursor`) that advances every run — so the full 20
+get covered roughly every 3 runs without you tracking which sources ran
+recently. Rotation only applies when you *don't* explicitly choose sources:
+checking specific boxes on the Lead Pipeline page always runs exactly those;
+the "Run next batch (rotation)" button and the scheduled job both omit an
+explicit list and get the next slice off the cursor.
+
+### Contact is mandatory
+
+A lead with no email after the full tiered enrichment pass — static site
+scan, then a headless-browser fallback if that found nothing — **never
+reaches the CRM.** `worker/src/pipeline.js`'s `partitionByContact()` drops it
+before scoring or drafting; a company you can't reach isn't a prospect to
+review later, it's dead weight in the pipeline.
+
+This has one real consequence: **Funding News leads almost never survive.**
+A headline like "Acme raises $2M" names a company but not which of several
+plausible domains is really theirs — guessing wrong risks enriching (or
+emailing) the wrong company, so that source deliberately produces no
+`website` at all. With no domain to scrape, enrichment can't run, so these
+get dropped by the mandatory filter as designed. The source stays in
+rotation because `just_funded` is the single highest-weighted scoring signal
+when a lead *does* survive — but expect a low hit rate from it specifically.
 
 **The pipeline stops at `draft`.** Nothing in it can send. Every message still
 passes the approval gate, and the send path is capped at `DAILY_SEND_CAP`

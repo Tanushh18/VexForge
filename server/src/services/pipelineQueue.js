@@ -1,4 +1,5 @@
 import PipelineRun from "../models/PipelineRun.js";
+import { getSettings, updateSettings } from "../models/Settings.js";
 
 // Queueing a pipeline run, shared by the console's "Start run" button and the
 // scheduled job. The server never executes a run — Chromium lives on the
@@ -8,12 +9,32 @@ import PipelineRun from "../models/PipelineRun.js";
 // The discovery sources live on the worker, so the server can't introspect
 // them. This list populates the UI's checkboxes and validates what gets
 // queued; adding a source means updating this list and the worker together.
+// Order matters here: it's kept in the same direct-fetch/Playwright
+// interleaving as worker/src/leadSources/index.js, so a contiguous rotation
+// slice (see pickRotationBatch below) naturally samples both kinds rather
+// than exhausting the 3 direct-fetch sources before ever reaching a browser
+// one, or vice versa.
 export const SOURCE_CATALOGUE = [
   { key: "hn_launches", label: "Hacker News launches", needsBrowser: false },
   { key: "product_hunt", label: "Product Hunt launches", needsBrowser: true },
-  { key: "yc_directory", label: "Y Combinator directory (funded + hiring)", needsBrowser: true },
   { key: "reddit_launches", label: "Reddit launches (r/startups, r/SaaS)", needsBrowser: false },
-  { key: "funding_news", label: "Funding news (Google News search)", needsBrowser: false },
+  { key: "yc_directory", label: "Y Combinator directory (funded + hiring)", needsBrowser: true },
+  { key: "funding_news", label: "Funding news (Google News search) — no website, most get dropped by the mandatory-contact filter", needsBrowser: false },
+  { key: "betalist", label: "BetaList — startups launching", needsBrowser: true },
+  { key: "betapage", label: "BetaPage — startup launches", needsBrowser: true },
+  { key: "indiehackers_products", label: "Indie Hackers — products", needsBrowser: true },
+  { key: "saashub", label: "SaaSHub — newest SaaS tools", needsBrowser: true },
+  { key: "f6s", label: "F6S — startup directory", needsBrowser: true },
+  { key: "startupranking", label: "StartupRanking — newest startups", needsBrowser: true },
+  { key: "launchingnext", label: "Launching Next — new startups", needsBrowser: true },
+  { key: "devhunt", label: "DevHunt — developer tool launches", needsBrowser: true },
+  { key: "peerlist_launches", label: "Peerlist — project launches", needsBrowser: true },
+  { key: "wellfound_startups", label: "Wellfound — startup listings", needsBrowser: true },
+  { key: "libhunt", label: "LibHunt — trending open-source projects", needsBrowser: true },
+  { key: "openalternative", label: "OpenAlternative — new open-source tools", needsBrowser: true },
+  { key: "alternativeto_new", label: "AlternativeTo — recently added", needsBrowser: true },
+  { key: "uneed", label: "Uneed — new tools launching", needsBrowser: true },
+  { key: "microlaunch", label: "Microlaunch — micro-SaaS launches", needsBrowser: true },
 ];
 
 export const DEFAULTS = {
@@ -24,16 +45,48 @@ export const DEFAULTS = {
   minDraftScore: Number(process.env.PIPELINE_MIN_DRAFT_SCORE || 60),
 };
 
+// 20 sources is a lot to walk in one run — sequentially, on purpose, since a
+// polite crawler doesn't hit a handful of sites in parallel from one IP. A
+// batch of 8 keeps a single run's wall-clock time reasonable; the cursor
+// below advances each run so every source gets covered roughly every
+// ceil(20/8) = 3 runs, rather than either hammering all 20 every time or
+// requiring you to hand-pick a subset yourself.
+export const ROTATION_BATCH_SIZE = Number(process.env.PIPELINE_ROTATION_BATCH_SIZE || 8);
+
 export const ACTIVE_STATUSES = ["queued", "claimed", "running"];
 
 export function findActiveRun() {
   return PipelineRun.findOne({ status: { $in: ACTIVE_STATUSES } }).sort({ createdAt: 1 });
 }
 
+// Pure and independently testable: given the full key list and a cursor
+// position, returns the next contiguous (wrapping) slice. Kept outside any
+// I/O so the wraparound and interleaving logic can be checked without a
+// database.
+export function pickRotationBatch(keys, cursor, batchSize) {
+  if (!keys.length) return { batch: [], nextCursor: 0 };
+  const size = Math.min(Math.max(1, batchSize), keys.length);
+  const start = ((cursor % keys.length) + keys.length) % keys.length; // safe for a negative or stale cursor
+  const batch = [];
+  for (let i = 0; i < size; i++) batch.push(keys[(start + i) % keys.length]);
+  return { batch, nextCursor: (start + size) % keys.length };
+}
+
+// Reads the persisted rotation cursor, advances it, and returns this run's
+// batch. Used only when the caller didn't explicitly choose sources — an
+// explicit choice (the console's checkboxes, or an API caller passing
+// `sources`) always wins and is never overridden by rotation.
+async function nextRotationBatch() {
+  const keys = SOURCE_CATALOGUE.map((s) => s.key);
+  const { rotationCursor = 0 } = await getSettings();
+  const { batch, nextCursor } = pickRotationBatch(keys, rotationCursor, ROTATION_BATCH_SIZE);
+  await updateSettings({ rotationCursor: nextCursor });
+  return batch;
+}
+
 export function validSources(requested) {
-  const valid = SOURCE_CATALOGUE.map((s) => s.key);
-  const list = Array.isArray(requested) && requested.length ? requested : valid;
-  return list.filter((s) => valid.includes(s));
+  const valid = new Set(SOURCE_CATALOGUE.map((s) => s.key));
+  return requested.filter((s) => valid.has(s));
 }
 
 // One run at a time, enforced here rather than in the worker: two runs would
@@ -47,9 +100,16 @@ export async function enqueueRun(options = {}, trigger = "manual") {
     throw err;
   }
 
-  const sources = validSources(options.sources);
+  // Presence of a non-empty `sources` array is what makes a choice explicit.
+  // Anything else — omitted, undefined, an empty array — means "you decide",
+  // which is what the rotation cursor is for.
+  const explicit = Array.isArray(options.sources) && options.sources.length > 0;
+  const sources = explicit ? validSources(options.sources) : await nextRotationBatch();
+
   if (!sources.length) {
-    const err = new Error("No valid sources selected");
+    const err = new Error(
+      explicit ? "None of the requested sources are valid" : "No sources available to rotate through"
+    );
     err.statusCode = 400;
     throw err;
   }
@@ -65,7 +125,8 @@ export async function enqueueRun(options = {}, trigger = "manual") {
 
 // The scheduled entry point. Skips rather than stacking if something is
 // already queued — including a run queued hours ago that no worker ever came
-// online to claim.
+// online to claim. Never passes explicit sources, so every scheduled run
+// rotates automatically.
 export async function enqueueScheduledRun() {
   const active = await findActiveRun();
   if (active) return { skipped: "a run is already queued or in progress", runId: active._id };

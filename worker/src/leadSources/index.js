@@ -4,6 +4,7 @@ import productHunt from "./productHunt.js";
 import ycDirectory from "./ycDirectory.js";
 import redditLaunches from "./redditLaunches.js";
 import fundingNews from "./fundingNews.js";
+import DIRECTORY_SOURCES from "./directorySites.js";
 
 // The discovery registry. Every adapter reads *public* listing pages only and
 // returns partial leads — company name, website, a description, and the
@@ -14,7 +15,18 @@ import fundingNews from "./fundingNews.js";
 // Adding a source means adding one module here with the same shape:
 //   { key, label, needsBrowser, run(contextOrOptions, options) }
 
-export const SOURCES = [hnLaunches, productHunt, ycDirectory, redditLaunches, fundingNews];
+// Direct-fetch (no browser) and Playwright-driven sources deliberately
+// interleaved rather than grouped, so a contiguous slice of this array (see
+// pickRotationBatch in the server's pipelineQueue.js) naturally samples both
+// kinds instead of exhausting one before touching the other.
+export const SOURCES = [
+  hnLaunches, // direct
+  productHunt, // browser
+  redditLaunches, // direct
+  ycDirectory, // browser
+  fundingNews, // direct
+  ...DIRECTORY_SOURCES, // browser (15)
+];
 
 export function listSources() {
   return SOURCES.map(({ key, label, needsBrowser }) => ({ key, label, needsBrowser }));
