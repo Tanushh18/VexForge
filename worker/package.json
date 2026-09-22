@@ -8,6 +8,7 @@
   "scripts": {
     "start": "node src/index.js",
     "once": "node src/index.js --once",
+    "diagnose": "node src/diagnose.js",
     "setup": "node src/setup.js",
     "test": "node --test test/*.test.js"
   },

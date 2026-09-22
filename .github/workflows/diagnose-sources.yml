@@ -1,0 +1,57 @@
+name: Diagnose lead sources
+
+# Tests all 20 discovery sources against the real internet — for when there's
+# no always-on machine yet to run the worker locally. No secrets, no
+# deployed API, no database: this only exercises the scraping code
+# (worker/src/leadSources/) and prints a pass/fail table for each source.
+# Nothing here can write to the CRM.
+#
+# Run it: Actions tab → "Diagnose lead sources" → Run workflow. Optionally
+# type specific source keys (space-separated, e.g. "betalist uneed
+# microlaunch") to test only those instead of all 20 — useful once you've
+# already fixed the obvious failures and want to recheck a handful.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Source keys to test (space-separated). Leave blank for all 20."
+        required: false
+        default: ""
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - run: npm ci
+
+      # --with-deps pulls the system libraries the runner image doesn't ship
+      # by default — same flag the Dockerfile pattern in server/ used to use
+      # before Chromium moved here.
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run diagnostics
+        id: diag
+        run: |
+          set +e
+          npm run diagnose -- ${{ github.event.inputs.sources }} 2>&1 | tee /tmp/diagnose.log
+          exit_code=${PIPESTATUS[0]}
+          {
+            echo "## Lead source diagnostic"
+            echo '```'
+            cat /tmp/diagnose.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$exit_code"

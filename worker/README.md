@@ -136,6 +136,31 @@ and a worker badge that goes offline after ~45s without a poll. That badge is
 the thing to check first: a job stuck in `queued` almost always means no worker
 is running, not that something broke.
 
+## Testing sources with no machine of your own
+
+`npm run diagnose` runs every discovery source and prints a pass/fail table —
+no deployed API, no `WORKER_API_KEY`, no database. It only exercises the
+scraping code, so it's safe to run anytime and touches nothing in the CRM.
+
+```bash
+npm run diagnose                    # all 20 sources
+npm run diagnose betalist uneed     # just these keys
+```
+
+If you don't have an always-on machine to run this on yet, `.github/workflows/diagnose-sources.yml`
+runs the exact same script on a GitHub Actions runner — which has real,
+unrestricted internet access. **Actions tab → "Diagnose lead sources" → Run
+workflow**, optionally typing specific source keys to narrow it down. The
+job summary shows the same table `npm run diagnose` prints locally.
+
+A row reading `NO` with an error is a broken source (wrong URL, or the site
+is blocking the request); a row reading `yes` with `0 found` means the page
+loaded but the generic harvester found nothing worth keeping — often a
+listing that needs a real wait condition (infinite scroll, a "load more"
+click) rather than just a fixed pause. Both are one-line fixes in
+`src/leadSources/directorySites.js`: change the `url`, or add a
+`waitForSelector` for the element that signals the listing has rendered.
+
 ## Jobs it handles
 
 | Job | Queued by | What it does |
