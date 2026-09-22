@@ -4,7 +4,8 @@ import { runDiscoveryJob, runDeepScanJob } from "./pipeline.js";
 import { refreshModelHealth, modelStatus } from "../../shared/modelRouter.js";
 
 // The local worker. Polls the deployed API for queued jobs, runs them here
-// where Chromium and Ollama actually live, and posts results back.
+// where Chromium runs, and posts results back. Scoring/drafting calls out to
+// Groq's hosted API (see shared/modelRouter.js) rather than a local model.
 //
 //   npm start        poll forever (what you leave running, or put in cron)
 //   npm run once     take at most one job, then exit — good for a cron entry
@@ -39,14 +40,14 @@ async function loop() {
 
   // Report what's actually available once at startup, since "the worker is
   // running but every draft is empty" is otherwise a confusing way to find
-  // out a model was never pulled.
+  // out GROQ_API_KEYS was never set.
   await refreshModelHealth();
   const models = modelStatus();
   console.log(`[worker] ${config.workerId} → ${config.apiUrl}`);
   console.log(
     models.backend
-      ? `[worker] models via ${models.backend}: ${models.roles.map((r) => `${r.role}→${r.resolvesTo || "unavailable"}`).join(", ")}`
-      : "[worker] no local model backend reachable — runs will score deterministically and skip drafting"
+      ? `[worker] models via ${models.backend} (${models.keyCount} key(s)): ${models.roles.map((r) => `${r.role}→${r.model}`).join(", ")}`
+      : "[worker] no Groq API key configured (GROQ_API_KEYS) — runs will score deterministically and skip drafting"
   );
 
   // A poll failure is expected now and then (tunnel down, instance asleep), so

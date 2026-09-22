@@ -12,10 +12,6 @@ export default function Admin() {
   const [form, setForm] = useState({ companyName: "", domain: "", industry: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [ollamaUrlInput, setOllamaUrlInput] = useState("");
-  const [ollamaSaved, setOllamaSaved] = useState("");
-  const [ollamaBusy, setOllamaBusy] = useState(false);
-  const [ollamaError, setOllamaError] = useState("");
 
   async function load() {
     setJobs(await api.scrapeJobs());
@@ -24,35 +20,15 @@ export default function Admin() {
   // Model and background-job state change on their own schedule, not with the
   // scan-job poll, so they load separately and refresh far less often.
   async function loadSystem() {
-    const [m, j, p, s] = await Promise.all([
+    const [m, j, p] = await Promise.all([
       api.models().catch(() => null),
       api.jobs().catch(() => []),
       api.pipelineStatus().catch(() => null),
-      api.settings().catch(() => null),
     ]);
     setModels(m);
     setBgJobs(j);
     setWorker(p?.worker || null);
     setGithubTrigger(p?.githubTrigger || null);
-    if (s) {
-      setOllamaSaved(s.ollamaUrl || "");
-      setOllamaUrlInput((current) => (current ? current : s.ollamaUrl || ""));
-    }
-  }
-
-  async function saveOllamaUrl(e) {
-    e.preventDefault();
-    setOllamaBusy(true);
-    setOllamaError("");
-    try {
-      const res = await api.updateSettings({ ollamaUrl: ollamaUrlInput.trim() });
-      setOllamaSaved(res.ollamaUrl || "");
-      setModels(res.models);
-    } catch (err) {
-      setOllamaError(err.message);
-    } finally {
-      setOllamaBusy(false);
-    }
   }
 
   useEffect(() => {
@@ -98,50 +74,29 @@ export default function Admin() {
         </div>
         {!models?.backend ? (
           <div className="hint">
-            No local model backend reachable. Start Ollama (<code>ollama serve</code>) and pull the models
-            listed in the README — the app still runs, but drafting, scoring and the chatbot stay off.
+            No Groq API key configured. Set <code>GROQ_API_KEYS</code> (comma-separated, one or more free-tier
+            keys) in this server's environment — the app still runs, but drafting, scoring and the chatbot stay
+            off until it's set.
           </div>
         ) : (
-          <table className="table">
-            <thead><tr><th>Role</th><th>Model</th><th>Pulled</th><th>Actually used</th></tr></thead>
-            <tbody>
-              {(models.roles || []).map((r) => (
-                <tr key={r.role}>
-                  <td style={{ fontWeight: 600 }}>{r.role}</td>
-                  <td className="hint">{r.model}</td>
-                  <td><span className={`pill pill-${r.available ? "done" : "failed"}`}>{r.available ? "yes" : "no"}</span></td>
-                  <td className="hint">{r.resolvesTo || "none available"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <table className="table">
+              <thead><tr><th>Role</th><th>Model</th><th>Status</th></tr></thead>
+              <tbody>
+                {(models.roles || []).map((r) => (
+                  <tr key={r.role}>
+                    <td style={{ fontWeight: 600 }}>{r.role}</td>
+                    <td className="hint">{r.model}</td>
+                    <td><span className={`pill pill-${r.available ? "done" : "failed"}`}>{r.available ? "ready" : "unavailable"}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="hint" style={{ marginTop: 8 }}>
+              {models.keyCount} Groq key(s) configured · currently using key #{(models.activeKeyIndex ?? 0) + 1}
+            </div>
+          </>
         )}
-
-        <form onSubmit={saveOllamaUrl} style={{ marginTop: 14, borderTop: "1px solid var(--border, #2a2a2a)", paddingTop: 14 }}>
-          <div className="field">
-            <label>Ollama tunnel URL</label>
-            <div className="hint" style={{ marginBottom: 6 }}>
-              Deployed instances have no local Ollama. Point this at a tunnel to your own machine (e.g.{" "}
-              <code>cloudflared tunnel --url http://localhost:11434</code>) instead of redeploying with a new
-              env var. Leave blank to fall back to <code>OLLAMA_URL</code>.
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                style={{ flex: 1 }}
-                placeholder="https://your-tunnel.trycloudflare.com"
-                value={ollamaUrlInput}
-                onChange={(e) => setOllamaUrlInput(e.target.value)}
-              />
-              <button className="btn btn-sm" disabled={ollamaBusy}>
-                {ollamaBusy ? "Saving…" : "Save"}
-              </button>
-            </div>
-            {ollamaError && <div className="error-box" style={{ marginTop: 8 }}>{ollamaError}</div>}
-            {ollamaSaved && !ollamaError && (
-              <div className="hint" style={{ marginTop: 8 }}>Currently using: {ollamaSaved}</div>
-            )}
-          </div>
-        </form>
       </div>
 
       <div className="panel" style={{ marginBottom: 20 }}>

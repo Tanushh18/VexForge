@@ -10,10 +10,8 @@ import { reportProgress, deliverLeads, finishRun, finishScan } from "./apiClient
 //
 //   1. discover  public listing sites (Product Hunt, HN launches, YC)
 //   2. enrich    a contact email from the company's OWN site
-//   3. score     deterministic signals, then the local reasoning model
-//   4. draft     outreach for the top N — Ollama is on localhost here, which
-//                is why drafting can't silently go missing the way it would
-//                if the server had to reach a model across a tunnel
+//   3. score     deterministic signals, then the reasoning model (Groq)
+//   4. draft     outreach for the top N, via Groq's drafting model
 //   5. deliver   POST to the deployed API, which owns dedupe and storage
 //
 // Dedupe deliberately does NOT happen here: the worker has no view of the CRM,

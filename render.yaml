@@ -6,30 +6,28 @@
 # TWO THINGS RENDER CANNOT HOST FOR YOU, both wired as `sync: false` env vars
 # you fill in once in the dashboard:
 #
-#   MONGO_URI  — Render has no managed MongoDB. Use a free MongoDB Atlas
-#                cluster. Atlas blocks unknown IPs by default, so allowlist
-#                Render's outbound IPs (Service → Connect → Outbound) or
-#                0.0.0.0/0 if you're comfortable relying on the connection
-#                string alone.
-#   OLLAMA_URL — Render's standard instances are CPU-only, and a 14B model on
-#                CPU is far too slow to sit in a request path. Point this at a
-#                machine you control that runs Ollama (your desktop behind a
-#                Cloudflare tunnel, or a GPU box). The app degrades cleanly
-#                without it: discovery, enrichment, dedupe and deterministic
-#                scoring all keep working — you lose drafting, the chatbot, and
-#                the model's ±15 scoring adjustment. Admin · System shows which
-#                roles actually resolved.
+#   MONGO_URI      — Render has no managed MongoDB. Use a free MongoDB Atlas
+#                    cluster. Atlas blocks unknown IPs by default, so allowlist
+#                    Render's outbound IPs (Service → Connect → Outbound) or
+#                    0.0.0.0/0 if you're comfortable relying on the connection
+#                    string alone.
+#   GROQ_API_KEYS  — comma-separated free-tier keys from console.groq.com/keys.
+#                    The app degrades cleanly without it: discovery,
+#                    enrichment, dedupe and deterministic scoring all keep
+#                    working — you lose drafting, the chatbot, and the model's
+#                    ±15 scoring adjustment. Admin · System shows which roles
+#                    actually resolved.
 #
 # ARCHITECTURE: this deploys the API and both static sites. It does NOT deploy
 # the crawler. Playwright drives a real Chromium (~730MB resident), which would
 # force a 2GB instance for a process that otherwise idles at ~140MB — so
-# discovery and deep scans run in worker/ on your own machine and deliver their
-# results here over HTTP. See worker/README.md.
+# discovery and deep scans run in worker/ on your own machine (or GitHub
+# Actions, see .github/workflows/pipeline.yml) and deliver their results here
+# over HTTP. See worker/README.md.
 #
-# That also means Playwright never needed tunnelling: it is an in-process
-# library, not a service. Ollama IS a service, so the API reaches it over your
-# tunnel via OLLAMA_URL for chat, follow-ups and digests, while the worker uses
-# its own localhost Ollama for drafting during a run.
+# Groq is a hosted API (no tunnel needed), so both the API (chat, follow-ups,
+# digests) and the worker (drafting during a run) reach it directly over
+# GROQ_API_KEYS — set the same value in both places.
 #
 # The static sites proxy /api/* through to the API, which keeps the browser
 # same-origin and sidesteps CORS. Render only knows the API's URL once it
@@ -115,18 +113,12 @@ services:
           name: vexforge-hq
           property: host
 
-      # --- Local models ---
-      # Your Ollama host — see the note at the top of this file.
-      - key: OLLAMA_URL
+      # --- Models (Groq, hosted) ---
+      # Comma-separated free-tier keys from console.groq.com/keys — see the
+      # note at the top of this file. Set the same value on the worker/GitHub
+      # Actions secret too.
+      - key: GROQ_API_KEYS
         sync: false
-      - key: LLM_BACKEND
-        value: auto
-      - key: OLLAMA_MODEL_REASONING
-        value: qwen2.5:14b-instruct
-      - key: OLLAMA_MODEL_DRAFTING
-        value: qwen2.5:7b-instruct
-      - key: OLLAMA_MODEL_FAST
-        value: qwen2.5:3b-instruct
 
       # --- Lead pipeline ---
       - key: DAILY_SEND_CAP
