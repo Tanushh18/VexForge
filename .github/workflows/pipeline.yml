@@ -13,6 +13,13 @@ name: Lead pipeline (worker)
 #                       vexforge-api → Environment tab), don't generate a new
 #                       one here, or every request gets a 401.
 #
+# Optional: OLLAMA_URL (repo secret) — a tunnel to a machine that's actually
+# running Ollama (e.g. cloudflared/devtunnel pointed at localhost:11434).
+# GitHub's runner is a fresh cloud VM with no Ollama installed, so without
+# this the worker correctly detects "no local model backend reachable" and
+# falls back to deterministic scoring with drafting skipped — not a bug, just
+# nothing to reach. Set it and drafting resumes on Actions runs too.
+#
 # On Render's free plan the API spins down when idle, so this pings it awake
 # first and gives it a moment before polling for work.
 #
@@ -60,4 +67,10 @@ jobs:
           VEXFORGE_API_URL: ${{ secrets.VEXFORGE_API_URL }}
           WORKER_API_KEY: ${{ secrets.WORKER_API_KEY }}
           WORKER_ID: github-actions
+          # Optional — leave the secret unset to keep skipping drafting on
+          # Actions runs. Set OLLAMA_URL to a reachable tunnel to resume it.
+          OLLAMA_URL: ${{ secrets.OLLAMA_URL }}
+          OLLAMA_MODEL_REASONING: ${{ secrets.OLLAMA_MODEL_REASONING }}
+          OLLAMA_MODEL_DRAFTING: ${{ secrets.OLLAMA_MODEL_DRAFTING }}
+          OLLAMA_MODEL_FAST: ${{ secrets.OLLAMA_MODEL_FAST }}
         run: npm run once
