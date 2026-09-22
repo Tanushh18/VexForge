@@ -1,0 +1,63 @@
+name: Lead pipeline (worker)
+
+# The real worker, running unattended — not the diagnostic. This polls the
+# deployed API for a queued job (one rotation batch of sources, see
+# server/src/services/pipelineQueue.js), runs it here where Chromium has
+# real internet access, and delivers scored/drafted leads back. Requires two
+# repo secrets that only you can set (Settings → Secrets and variables →
+# Actions → New repository secret) — this workflow can't run without them:
+#
+#   VEXFORGE_API_URL   your deployed API's URL (e.g. https://vexforge-api.onrender.com)
+#   WORKER_API_KEY     must match WORKER_API_KEY on the server EXACTLY — copy
+#                       it from the server's own environment (Render →
+#                       vexforge-api → Environment tab), don't generate a new
+#                       one here, or every request gets a 401.
+#
+# On Render's free plan the API spins down when idle, so this pings it awake
+# first and gives it a moment before polling for work.
+#
+# Nothing here can send email. It stops at draft, same as the local worker —
+# the approval gate and the daily send cap are both server-side.
+
+on:
+  workflow_dispatch: {} # Actions tab → this workflow → Run workflow, any time
+  schedule:
+    # 03:00 UTC = 08:30 IST. Runs `npm run once`: claims at most one queued
+    # job. Queue one first — set PIPELINE_SCHEDULE_ENABLED=true on the server
+    # so it queues its own rotation batch daily, or click "Run next batch" on
+    # the Lead Pipeline page before this fires. A run with nothing queued
+    # exits immediately; that's normal, not a failure.
+    - cron: "0 3 * * *"
+
+jobs:
+  run-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Wake the deployed API (free-tier instances sleep when idle)
+        run: |
+          curl -sS -o /dev/null -w "ping: %{http_code}\n" --retry 3 --retry-delay 5 \
+            "${{ secrets.VEXFORGE_API_URL }}/api/ping" || true
+          sleep 5
+
+      - name: Run one job
+        env:
+          VEXFORGE_API_URL: ${{ secrets.VEXFORGE_API_URL }}
+          WORKER_API_KEY: ${{ secrets.WORKER_API_KEY }}
+          WORKER_ID: github-actions
+        run: npm run once
