@@ -1,754 +1,864 @@
 # VexForge HQ
 
-An internal "AI company" console for VexForge, running entirely on local models: an end-to-end
-lead-generation pipeline (discover → enrich → score → draft), a live org chart across Operations,
-HR, Tech, Finance and Support, a CRM/outreach queue with a human-approval gate and a daily send
-cap, a call/feedback ticket system, a full activity log, and a voice-enabled chatbot (Ember, the
-Head Manager) you command in plain English. Includes the public marketing site with a working
-contact form wired into the CRM.
+An internal "AI company" console for VexForge, running entirely on local and hosted models: an end-to-end lead-generation pipeline (discover → enrich → score → draft), a live org chart across Operations, HR, Tech, Finance and Support, a CRM/outreach queue with a human-approval gate and a daily send cap, a call/feedback ticket system, a full activity log, and a voice-enabled chatbot (Ember, the Head Manager) you command in plain English. Includes the public marketing site with a working contact form wired into the CRM.
 
-## Architecture: two processes
+---
 
-VexForge runs as **two** processes, not one, and the split is forced by memory:
+## Table of Contents
 
-```
-  YOUR MACHINE                           DEPLOYED (512MB is plenty)
-  ┌───────────────────────┐              ┌──────────────────────────┐
-  │ worker/               │  poll ──────►│ server/  ~140MB idle     │
-  │  • Playwright ~730MB  │              │  • CRM, dedupe, storage  │
-  │  • discovery          │  leads ─────►│  • approval queue        │
-  │  • contact enrichment │  progress ──►│  • sending (daily cap)   │
-  │  • scoring            │              │  • reply detection       │
-  │  • drafting           │              │  • follow-ups, digests   │
-  │ Ollama 2-16GB         │◄── tunnel ───│  • chat (needs a model)  │
-  └───────────────────────┘              └──────────────────────────┘
-                                          client/ + website/ (static)
-```
+- [Description](#description)
+- [Tech Stack](#tech-stack)
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Dependencies](#dependencies)
+- [Contribution Guide](#contribution-guide)
 
-**Why Playwright can't be tunnelled.** Ollama is an HTTP service, so the
-deployed server reaches it over a tunnel with one env var. Playwright is an
-*in-process library* — there's no port to point at — so whatever drives the
-browser has to live where the browser is. That's the worker.
+---
 
-The worker never touches the database. It posts leads to the API, which owns
-dedupe: a second implementation of that rule is exactly how the same company
-ends up in the CRM twice. It also **can't send anything** — the approval gate
-and the send cap are both server-side, behind an auth the worker doesn't hold.
+## Description
 
-One upside of drafting on the worker: Ollama is on *localhost* there, so
-drafts can't silently go missing the way they would if the server had to reach
-a model across a tunnel that happened to be down.
+VexForge HQ is a comprehensive lead-generation and sales management system designed for AI-driven prospecting. It automates the entire outreach lifecycle: discovering potential customers from 20 different sources, enriching their contact information, scoring leads based on multiple signals, drafting personalized outreach, managing approvals, and tracking responses.
 
-See **[worker/README.md](worker/README.md)** to run it.
+### Key Highlights
 
-## The lead pipeline
+- **Two-Process Architecture**: Separated worker (local discovery with Playwright) and server (deployed API with CRM) to optimize memory usage
+- **AI-Powered Pipeline**: Uses Groq API for intelligent lead scoring, drafting, and chat interactions
+- **Real-Time Updates**: Live job progress reporting from worker to UI
+- **Multi-Source Discovery**: Crawls 20 different platforms including Hacker News, Reddit, Product Hunt, Y Combinator, and more
+- **Smart Contact Enrichment**: Combines static site scanning with headless browser fallback
+- **Deterministic Scoring**: Signal-based lead qualification with configurable weights
+- **Approval Gate**: All messages pass through human review before sending
+- **Daily Send Cap**: Prevents spam classification through rate limiting
+- **Activity Logging**: Full audit trail of all actions
+- **Voice Chatbot**: Ember, the Head Manager, for voice-enabled command interface
+- **Public Marketing Site**: Includes working contact form integrated with CRM
 
-This is the part that finds you clients. One run, six stages:
+---
 
-```
-1. Discover   20 public listing sites → company name, website, timing signals
-2. Enrich     find a contact email on the company's OWN site (static pass, then a
-              headless browser only if that comes back empty)
-3. Filter     MANDATORY — a lead with no email after full enrichment is dropped,
-              never reaches the CRM. See "Contact is mandatory" below.
-4. Score      deterministic signal weights, then a ±15 adjustment from the local
-              reasoning model — see shared/scoring.js
-5. Draft      outreach for the top N scoring leads that made it past the filter
-6. Deliver    POST to the API, which dedupes against the CRM and stores
-```
+## Tech Stack
 
-Stages 1-5 run on the worker; stage 6 is where the deployed side takes over.
+### Backend
+- **Runtime**: Node.js 22 (LTS)
+- **Framework**: Express.js 4.21.2
+- **Database**: MongoDB (via Mongoose 8.9.5)
+- **API Keys**: Groq (hosted LLM)
+- **Email**: Nodemailer 9.0.5 (SMTP-based outreach)
+- **Reply Detection**: IMAP (imapflow 1.0.171) + mailparser 3.7.2
+- **HTTP Client**: Axios 1.7.9
+- **Authentication**: JWT (jsonwebtoken 9.0.2), bcryptjs
+- **HTML Parsing**: Cheerio 1.0.0
+- **CORS**: cors 2.8.5
+- **Logging**: Morgan 1.10.0
+- **Rate Limiting**: express-rate-limit 7.4.1
+- **Environment**: dotenv 16.4.7
 
-### 20 discovery sources, two fetch strategies in rotation
+### Frontend
+- **UI Framework**: React 18.3.1
+- **Build Tool**: Vite 6.0.7
+- **Routing**: React Router DOM 7.18.2
+- **Dev Server**: Vite dev server (port 5173)
 
-| Fetch strategy | Count | Sources |
-|---|---|---|
-| **Direct** (HTTP/API, no browser) | 3 | Hacker News launches (Algolia API), Reddit launches (r/startups, r/SaaS — Reddit's public `.json` API), Funding news (Google News RSS) |
-| **Playwright** (client-rendered listings) | 17 | Product Hunt, Y Combinator directory, plus 15 launch/directory/hiring boards — BetaList, BetaPage, Indie Hackers, SaaSHub, F6S, StartupRanking, Launching Next, DevHunt, Peerlist, Wellfound, LibHunt, OpenAlternative, AlternativeTo, Uneed, Microlaunch |
+### Worker (Local)
+- **Browser Automation**: Playwright 1.48.2 (Chromium headless)
+- **HTTP Client**: Axios 1.7.9
+- **HTML Parsing**: Cheerio 1.0.0
+- **Environment**: dotenv 16.4.7
 
-The 15 Playwright sources share **one generic harvester**
-(`worker/src/leadSources/genericDirectory.js`) rather than 15 bespoke
-per-site scrapers: it collects every outbound `<a href>` on a listing page and
-its link text as a company-name candidate, filtering out social/platform
-links and UI chrome ("Visit", "Sign up", …). That's the same technique
-already used for Product Hunt and YC — match by link *shape*, not a specific
-CSS class — generalized so one well-tested extractor backs many configs. Each
-site is just a `{key, url, platformHosts}` entry in
-`worker/src/leadSources/directorySites.js`; a listing that's moved or added a
-login wall returns 0 results rather than breaking the run (`safeSource()`
-isolates every source's failures from the rest).
+### Shared Code
+- **Model Routing**: Multi-model support with fallback (shared/modelRouter.js)
+- **Scoring Engine**: Deterministic signal-based scoring (shared/scoring.js)
+- **Outreach Prompts**: LLM-driven message generation (shared/outreach.js)
 
-**Runs rotate through the 20 rather than crawling all of them every time** —
-a polite, sequential 20-site crawl in one sitting is a long run and a lot of
-load on sites you don't want to look like a bot to. `PIPELINE_ROTATION_BATCH_SIZE`
-(default 8) sources are picked per run, off a cursor persisted in the
-database (`Settings.rotationCursor`) that advances every run — so the full 20
-get covered roughly every 3 runs without you tracking which sources ran
-recently. Rotation only applies when you *don't* explicitly choose sources:
-checking specific boxes on the Lead Pipeline page always runs exactly those;
-the "Run next batch (rotation)" button and the scheduled job both omit an
-explicit list and get the next slice off the cursor.
+### Deployment
+- **Platform**: Render (render.yaml blueprint)
+- **Container**: Docker (Node.js 22-bookworm-slim)
+- **Database Hosting**: MongoDB Atlas (free tier compatible)
 
-### Running the crawl without a machine of your own
+### Optional Services
+- **Transcription**: OpenAI Whisper-compatible endpoint
+- **Notifications**: Telegram Bot API
+- **CI/CD**: GitHub Actions (pipeline.yml, diagnose-sources.yml)
 
-`worker/` can run anywhere with a real network — including a GitHub Actions
-runner, which has no memory ceiling to work around and no laptop that has to
-stay open. Two workflows in `.github/workflows/`:
+---
 
-- **`diagnose-sources.yml`** — tests all 20 sources with no secrets and no
-  deployed API, safe to run any time. See `worker/README.md`.
-- **`pipeline.yml`** — the real worker: polls the deployed API, claims a
-  queued job, delivers leads back. Needs `VEXFORGE_API_URL` and
-  `WORKER_API_KEY` as GitHub repo secrets (Settings → Secrets and variables
-  → Actions), the second matching the server's value exactly.
+## Features
 
-By default `pipeline.yml` only runs on its own daily cron or a manual click
-in the Actions tab — a run queued from the console just waits for one of
-those. Setting `GITHUB_TRIGGER_TOKEN`/`_OWNER`/`_REPO` on the **server**
-closes that gap: the moment a run is queued, the server calls GitHub's API to
-wake the workflow immediately, the same as clicking "Run workflow" yourself.
-Skipped automatically when a local worker is already online (its atomic
-job-claim makes a redundant Actions run harmless, but there's no reason to
-spend Actions minutes on one when a machine is already polling). See
-`server/.env.example` for the exact token scope required — a fine-grained PAT
-limited to this one repo's Actions permission, nothing else.
+### Lead Generation Pipeline
 
-### Contact is mandatory
+#### 1. **Multi-Source Discovery (20 Platforms)**
 
-A lead with no email after the full tiered enrichment pass — static site
-scan, then a headless-browser fallback if that found nothing — **never
-reaches the CRM.** `worker/src/pipeline.js`'s `partitionByContact()` drops it
-before scoring or drafting; a company you can't reach isn't a prospect to
-review later, it's dead weight in the pipeline.
+**Direct HTTP/API Sources (3)**:
+- Hacker News launches (via Algolia API)
+- Reddit launches (r/startups, r/SaaS)
+- Funding news (Google News RSS)
 
-This has one real consequence: **Funding News leads almost never survive.**
-A headline like "Acme raises $2M" names a company but not which of several
-plausible domains is really theirs — guessing wrong risks enriching (or
-emailing) the wrong company, so that source deliberately produces no
-`website` at all. With no domain to scrape, enrichment can't run, so these
-get dropped by the mandatory filter as designed. The source stays in
-rotation because `just_funded` is the single highest-weighted scoring signal
-when a lead *does* survive — but expect a low hit rate from it specifically.
+**Playwright Browser Sources (17)**:
+- Product Hunt
+- Y Combinator directory
+- Directory/Launch Boards: BetaList, BetaPage, Indie Hackers, SaaSHub, F6S, StartupRanking, Launching Next, DevHunt, Peerlist, Wellfound, LibHunt, OpenAlternatives, AlternativeTo, Uneed, Microlaunch
 
-**The pipeline stops at `draft`.** Nothing in it can send. Every message still
-passes the approval gate, and the send path is capped at `DAILY_SEND_CAP`
-(25/day by default) — a new sending domain that fires a hundred cold emails in
-an afternoon gets classified as spam, and that reputation then follows every
-later message.
+**Key Features**:
+- Generic harvester for 15 directory sites (reduces maintenance)
+- Rotation-based crawling (8 sources per run by default)
+- Graceful failure isolation (one source's failure doesn't break the run)
+- Configurable per-source limits (`PIPELINE_PER_SOURCE`)
 
-Click **Start run** on the Lead Pipeline page and the job is queued; the worker
-picks it up on its next poll and reports progress as it goes, so the page shows
-the live stage and the company being worked on rather than a blank several
-minutes. If no worker is online the page says exactly that, instead of leaving
-a job to look mysteriously stuck.
+#### 2. **Contact Enrichment**
+- Static site scanning for emails
+- Headless browser fallback for client-rendered sites
+- Mandatory contact requirement (leads without email are dropped)
+- Domain-based verification
 
-### Scoring
+#### 3. **Lead Scoring**
+- **Deterministic signals** with configured weights
+- **AI adjustment**: ±15 adjustment from reasoning model
+- **Base score**: 30 points
+- **Configurable thresholds**: Draft minimum score, daily send cap
+- **Signal examples**: Funding status, headcount, integration signals, etc.
 
-Signals are observed facts; weights are in `SIGNAL_WEIGHTS`. Base score is 30.
+#### 4. **Message Drafting**
+- AI-powered outreach copy generation
+- Uses Groq API for fluent, personalized messages
+- Runs on worker (local Ollama or deployed Groq)
+- Can be skipped if API is unavailable
 
-| Signal | Weight | Why |
-|---|---|---|
-| `just_funded` | +30 | budget exists, and it's new |
-| `just_launched` | +25 | needs a site/infra now, before a vendor is entrenched |
-| `has_contact_email` | +20 | without it there's no outreach path at all |
-| `hiring` | +15 | growing, often with unmet build capacity |
-| `target_industry` | +12 | matches what VexForge has already shipped |
-| `has_founder_name` | +8 | a personalized first line lands better than "Hi there" |
-| `has_website` | +5 | |
-| `no_contact_path` | −20 | no email, and no site to find one on |
-| `too_large` | −15 | enterprise procurement isn't this studio's lane |
-| `agency_or_competitor` | −25 | another studio isn't a client |
+#### 5. **Lead Delivery & Deduplication**
+- API-side deduplication against existing CRM
+- Prevents duplicate records across runs
+- RESTful API integration (POST /api/leads)
 
-Bands: **hot** ≥ 70, **warm** ≥ 45, **cold** below. The reasoning model can re-rank *within* the
-deterministic result but is clamped to ±15 — it cannot promote a cold lead to hot, and it cannot
-overrule a missing contact path. If no model is running, scoring still works; you just lose the
-adjustment.
+### CRM & Outreach Management
 
-### What each source does and doesn't touch
+#### Lead Management
+- Lead storage and search
+- Contact information tracking
+- Company details (website, funding, headcount, etc.)
+- Lead status tracking (new, enriched, scored, drafted, approved, sent, responded)
+- Search and filtering capabilities
 
-Every adapter reads **public listing pages only** and takes nothing but a company name, a website
-and a description. Contact details never come from these sites — they come from each company's own
-homepage/contact/about pages in the enrichment step, exactly as they do for a lead you add by hand.
-No LinkedIn, no login-gated directories, no bulk harvesting, and a sequential one-page-at-a-time
-crawl rather than a parallel scraper farm.
+#### Outreach Queue
+- Approval gate for all outreach messages
+- Human review before sending
+- Daily send cap (default: 25 emails/day)
+- Automatic deduplication against existing messages
+- Message template tracking
 
-One exception worth calling out: **funding-news leads carry no `website` field.** A headline like
-"Acme raises $2M" identifies the company but not which of several plausible domains is really
-theirs, so guessing one would risk enriching (or emailing) the wrong company. These leads still
-score — `just_funded` is the single highest-weighted signal — but sit with the `no_contact_path`
-penalty until you find the domain yourself, or a later scan on the Leads/Admin page fills it in.
+#### Response Detection
+- IMAP-based inbox polling (automatic or manual)
+- Reply detection from known leads
+- Auto-flip to "responded" status
+- Support for multiple SMTP/IMAP accounts
 
-## Local models
+#### Follow-Up Management
+- Automatic follow-up draft queuing after `FOLLOWUP_AFTER_DAYS`
+- Re-engagement tracking
+- Lead lifecycle management
 
-Everything runs on a local [Ollama](https://ollama.com). No paid API key anywhere. Work is routed
-to one of three models by *role*, because asking one small model to do everything is how you get
-bad decisions and slow UIs both:
+### Organization & Team Management
 
-| Role | Default model | Used for |
-|---|---|---|
-| `reasoning` | `qwen2.5:14b-instruct` | lead scoring and fit assessment, ticket triage, weekly digests — anything that changes what the pipeline does |
-| `drafting` | `qwen2.5:7b-instruct` | outreach copy and follow-ups |
-| `fast` | `qwen2.5:3b-instruct` | classification, chatbot replies, one-line summaries |
+#### Live Org Chart
+- Real-time view across departments: Operations, HR, Tech, Finance, Support
+- Employee management (CRUD operations)
+- Department assignments
+- Role tracking
 
-```bash
-ollama pull qwen2.5:14b-instruct   # the decision-maker — needs ~10GB free
-ollama pull qwen2.5:7b-instruct
-ollama pull qwen2.5:3b-instruct
-```
+#### Activity Log
+- Complete audit trail of all system actions
+- User activity tracking
+- Pipeline run history
+- Email sending logs
+- Lead updates
 
-On a smaller machine, set `OLLAMA_MODEL_ALL=qwen2.5:7b-instruct` to collapse all three roles onto
-one model. If a role's model isn't pulled, the router falls back down the size ladder rather than
-failing — a lead scored by the 3B model beats no scored lead at all, and **Admin · System** shows
-you which model each role actually resolved to.
+### Communication & Support
 
-The older [VexForge-LocalLLM](../VexForge-LocalLLM) sibling service still works as a backend
-(`LLM_BACKEND=localllm`, or `auto` which prefers Ollama and falls back to it).
+#### Ticket System
+- Call/feedback ticket management
+- Ticket categorization and assignment
+- Status tracking (open, in-progress, resolved)
+- Integration with activity log
 
-## Org structure
+#### Voice Chatbot (Ember)
+- Voice-enabled command interface
+- Plain English commands
+- Real-time chat responses
+- Integration with lead data and CRM
 
-```
-You (CEO)
- └─ Ember — Head Manager (Chief of Staff)
-     ├─ Operations Manager (Rhea) → Lead Scout, Source Curator, Enrichment Agent,
-     │                              Lead Ranker, Outreach Drafter, Reply Watcher,
-     │                              Pipeline Coordinator
-     ├─ HR Manager (Priya) → Onboarding Agent, Performance Tracker, Recruiting Agent,
-     │                       Capacity Planner, Policy & Docs Agent
-     ├─ Tech Manager (Kabir) → Website Ops, Automation Engineer, Cloud & Infra Agent,
-     │                         Database Agent, QA Agent
-     ├─ Finance Manager (Devika) → Quote Builder, Pipeline Value Analyst,
-     │                             Invoicing & Collections Agent
-     └─ Support Manager (Arjun) → Call & Feedback Agent, Ticket Resolver,
-                                  Knowledge Base Agent
-```
+#### Email Integration
+- Telegram push notifications (new drafts, tickets, replies, digests)
+- Email-based reply detection
+- Automatic follow-up nudges
 
-Every "agent" is a row in the database whose `status`/`currentTask` gets updated by real backend
-actions (crawling a source, scoring a batch, drafting a message, handling your chat command) — the
-dashboard reflects what's actually happening, not a static picture. Each one also carries a
-`modelRole` recording which of the three local models its work actually runs on, so the org chart
-documents the real routing rather than being decoration.
+### Daily Digests
+- Automated summary reports
+- Pipeline run summaries
+- Response summaries
+- Scheduled or manual generation
 
-Edit the roster in `server/src/services/seed.js`. The seed **upserts by title**, so adding an agent
-to that list and restarting is enough — you no longer have to drop the `employees` collection,
-which used to throw away every agent's accumulated `tasksCompleted` count.
+### Public Marketing Site
+- Working contact form
+- CRM integration (form submissions → lead database)
+- Static hosting on Render
+- Proxy /api/* routes to backend API
 
-## What's actually automated vs. what needs you
+---
 
-This matters, so it's not buried:
-
-| Capability | Status |
-|---|---|
-| Org dashboard, CRM, ticket system, activity log | Fully automated, real-time |
-| **Finding new leads** (discovery) | Fully automated — Playwright + a public API across three sources, on demand or on a daily schedule. Public listing pages only. |
-| **Lead scoring & ranking** | Fully automated — deterministic signal weights plus a clamped ±15 adjustment from the local reasoning model. Works with no model running. |
-| **Auto-drafting for top leads** | Fully automated — the pipeline drafts for the top N scoring leads that have an email. Every draft still lands in the approval queue. |
-| **Daily send cap** | Enforced — `DAILY_SEND_CAP` (25/day) on automated SMTP sends. Marking a message sent by hand doesn't count against it, since that's you sending from your own client. |
-| AI drafting of outreach copy (email & LinkedIn) | Fully automated — runs on **local models via Ollama**, no paid API key |
-| Sending **email** once you approve a draft | Automated *if* you configure SMTP — otherwise one click to open it in your mail client |
-| Sending **LinkedIn** messages | **Never automated.** No tool here can log into LinkedIn or drive a browser to send anything, and doing so violates LinkedIn's Terms of Service and risks the account. Approving a LinkedIn draft gives you the message text + a one-click search link for the company; you paste and send it yourself. |
-| Finding a company's contact email (fast path) | A narrow, low-risk scraper that only reads a company's *own* public homepage/contact/about pages for a listed email — no LinkedIn, no private directories, no bulk harvesting |
-| Finding a company's contact email (JS-rendered sites) | The Admin · Deep Scan page runs the same lookup through a real headless browser (Playwright) for sites that render contact info client-side — only used as a fallback when the fast scan finds nothing |
-| Cold-email sending | Sits in the approval queue by design — nothing goes out until you click Approve, per your earlier call to keep a human review step |
-| Live phone calls / auto-transcription | Not wired up (needs your own Twilio number or similar). The Support page logs calls via pasted transcripts today; see "Extending" below for how to add live telephony |
-| Voice input/output on the chatbot | Browser-native (Web Speech API) — works in Chrome/Edge, no extra service or key needed |
-| Bulk lead import | CSV upload on the Leads page, with automatic duplicate rejection (by company name or website domain) |
-| Contact enrichment | If you add a lead manually with a website but no email, a background scan fills the email in automatically when it finds one |
-| Reply detection | *If* `IMAP_HOST` is configured, polls an inbox every 5 minutes and flips a lead to "responded" when someone from its `contactEmail` writes back |
-| Follow-up nudges | A lead sitting in "outreach_sent" with no reply for `FOLLOWUP_AFTER_DAYS` (default 4) gets one automatic follow-up draft queued — same approval gate as any other draft |
-| Ticket urgency tagging | Auto-classified from the transcript by the local model on ticket creation — a triage hint, not authoritative |
-| Weekly digest | Auto-generated from the activity log once a week, shown on the Dashboard and pushed to Telegram if configured |
-| Push notifications | *If* `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` are set: new draft ready, high-urgency ticket, ticket escalated, lead replied, weekly digest |
-
-## Stack
-
-- **server/** — Node + Express + MongoDB (Mongoose), JWT auth, Nodemailer for approved email sends,
-  Cheerio/Axios for the fast contact scraper, Playwright for lead discovery and the JS-rendered
-  deep-scan fallback. Talks to Ollama over plain HTTP — no vendor SDK.
-- **client/** — React + Vite, no UI framework — plain CSS matching the VexForge brand.
-- **website/** — the public marketing site (your catalogue page) with a contact form that posts to the CRM as an opt-in lead.
-- **[Ollama](https://ollama.com)** — runs the three local models. Nothing else is required; the older
-  [VexForge-LocalLLM](../VexForge-LocalLLM) sibling service remains supported as an alternate backend.
-
-## Project layout
+## Project Structure
 
 ```
-VexForge-Automation/
-├── client/                  React + Vite frontend
+VexForge/
+├── server/                      # Node.js/Express API (deployed to Render)
 │   ├── src/
-│   │   ├── pages/           Dashboard, Pipeline, Leads, Outreach, Support, Activity, Admin, Login
-│   │   ├── components/      ChatWidget, OrgChart, ...
-│   │   ├── hooks/
-│   │   ├── services/        API client wrappers
-│   │   └── AuthContext.jsx
-│   └── vite.config.js
-├── shared/                  Imported by BOTH server and worker — no dependencies
-│   ├── modelRouter.js       role → local model routing (the only place a model is named)
-│   ├── scoring.js           deterministic signal weights + the clamped model adjustment
-│   └── outreach.js          the draft prompts
-├── worker/                  LOCAL ONLY — the half that needs a browser and a GPU
-│   ├── src/
-│   │   ├── index.js         poll loop (`npm start`) / one-shot (`npm run once`)
-│   │   ├── apiClient.js     talks to the deployed API with a worker key
-│   │   ├── pipeline.js      the run: discover → enrich → score → draft → deliver
-│   │   ├── leadSources/     one module per discovery source
-│   │   └── scraper.js       contact lookup, static pass then browser fallback
+│   │   ├── index.js             # Express app setup, routes mounting
+│   │   ├── config/              # Configuration modules
+│   │   ├── middleware/          # Auth, error handling, logging
+│   │   ├── models/              # MongoDB schemas (Mongoose)
+│   │   │   ├── ActivityLog.js
+│   │   │   ├── ChatMessage.js
+│   │   │   ├── Employee.js
+│   │   │   ├── Lead.js
+│   │   │   ├── OutreachMessage.js
+│   │   │   ├── PipelineRun.js
+│   │   │   ├── Ticket.js
+│   │   │   └── ...
+│   │   ├── routes/              # API endpoints
+│   │   │   ├── auth.js          # Authentication
+│   │   │   ├── leads.js         # Lead CRUD & search
+│   │   │   ├── outreach.js      # Outreach queue management
+│   │   │   ├── pipeline.js      # Pipeline job management
+│   │   │   ├── company.js       # Company management
+│   │   │   ├── employees.js     # Employee management
+│   │   │   ├── tickets.js       # Ticket system
+│   │   │   ├── chat.js          # Chat/chatbot
+│   │   │   ├── digest.js        # Daily digests
+│   │   │   ├── activity.js      # Activity log
+│   │   │   ├── admin.js         # Admin settings
+│   │   │   └── public.js        # Public endpoints (contact form)
+│   │   └── services/            # Business logic
+│   │       ├── seed.js          # Database seeding
+│   │       └── ...
+│   ├── test/                    # Test files
+│   ├── Dockerfile               # Docker container spec
+│   ├── package.json
 │   └── .env.example
-├── server/                  Express backend — deployed, no Playwright
+│
+├── client/                      # React + Vite frontend (Render static site)
 │   ├── src/
-│   │   ├── routes/          auth, employees, leads, outreach, tickets, activity, chat, public, admin, digest, pipeline
-│   │   ├── models/          Employee, Lead, OutreachMessage, Ticket, ActivityLog, ChatMessage, ScrapeJob, Digest, PipelineRun
-│   │   ├── services/
-│   │   │   ├── pipelineQueue.js     queues runs for the worker to claim
-│   │   │   ├── leadIngestService.js takes the worker's leads, dedupes, stores
-│   │   │   ├── workerRegistry.js    which workers have checked in recently
-│   │   │   ├── contactScraper.js    the static-only tier (no Playwright here)
-│   │   │   ├── leadRepository.js    lead identity + dedupe, shared by every create path
-│   │   │   ├── sendQuotaService.js  the daily send cap
-│   │   │   ├── jobRegistry.js       every recurring job, its schedule, and its last outcome
-│   │   │   └── llmService, emailService, notifyService, inboxService,
-│   │   │       followUpService, digestService, seed
-│   │   ├── middleware/      auth (JWT, console) + workerAuth (key, worker)
-│   │   └── config/
-│   ├── test/                node:test unit tests for the pure/deterministic pieces
-│   ├── Dockerfile           builds from the REPO ROOT so shared/ is included
+│   │   ├── main.jsx             # React entry point
+│   │   ├── App.jsx              # Root component
+│   │   ├── AuthContext.jsx      # Auth state management
+│   │   ├── pages/               # Page components
+│   │   ├── components/          # Reusable UI components
+│   │   ├── hooks/               # Custom React hooks
+│   │   ├── services/            # API client services
+│   │   ├── office/              # Office/org chart component
+│   │   └── styles.css           # Global styles
+│   ├── vite.config.js
+│   ├── index.html
+│   └── package.json
+│
+├── worker/                      # Local worker (runs on your machine or GitHub Actions)
+│   ├── src/
+│   │   ├── index.js             # Main worker loop (polling, job processing)
+│   │   ├── diagnose.js          # Source diagnostics utility
+│   │   ├── setup.js             # Initial setup
+│   │   ├── pipeline.js          # Pipeline orchestration (discover → enrich → score → draft)
+│   │   ├── leadSources/         # Discovery source implementations
+│   │   │   ├── genericDirectory.js   # Generic extractor for 15 directory sites
+│   │   │   ├── directorySites.js     # Directory site configurations
+│   │   │   └── ...
+│   │   └── services/            # Discovery, enrichment, scoring modules
+│   ├── test/                    # Test files
+│   ├── README.md                # Detailed worker documentation
+│   ├── package.json
 │   └── .env.example
-├── website/                 Public marketing site (static HTML)
-├── package.json             Root scripts (installs/runs server + client together)
-└── README.md
+│
+├── shared/                      # Shared code (imported by both server & worker)
+│   ├── modelRouter.js           # Multi-model support with fallback logic
+│   ├── scoring.js               # Signal-based scoring engine
+│   ├── outreach.js              # Outreach message prompts
+│   └── package.json
+│
+├── website/                     # Public marketing site (Render static)
+│   ├── index.html               # Public landing page
+│   ├── contact-form.html        # Contact form (integrated with CRM)
+│   ├── config.js                # Site configuration
+│   └── ...
+│
+├── .github/
+│   └── workflows/
+│       ├── pipeline.yml         # GitHub Actions: runs worker on schedule or trigger
+│       └── diagnose-sources.yml # Tests all discovery sources
+│
+├── render.yaml                  # Render deployment blueprint (3 services)
+├── package.json                 # Root package (dev scripts)
+├── .gitignore                   # Git ignore rules
+└── README.md                    # Main documentation (this file)
 ```
 
-## Prerequisites
+---
 
-- **Node.js 20+** and npm
-- **MongoDB** — a local `mongod`, a Docker container, or a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster
-- **[Ollama](https://ollama.com) running**, with the three models pulled (see "Local models" above).
-  No paid API key. The app runs without it — you just lose drafting, model scoring and the chatbot.
-- **Playwright's Chromium**, *on the worker machine only*: `npx playwright install chromium`
-  (one-time, ~95MB). The deployed server never needs it.
-- *(Optional)* SMTP credentials (e.g. a Gmail app password) if you want one-click email sending instead of opening drafts in your mail client
+## Installation
 
-## Getting started
+### Prerequisites
 
-1. **Clone the repo**
+- **Node.js 22+** (LTS recommended)
+- **npm 10+**
+- **MongoDB Atlas** account (free tier) or local MongoDB running on `localhost:27017`
+- **Git**
+- **Playwright binary** (auto-installed via npm)
 
-   ```bash
-   git clone git@github.com:Tanushh18/VexForge.git
-   cd VexForge
-   ```
+### Local Development Setup
 
-2. **Install dependencies** (installs both `server/` and `client/`)
-
-   ```bash
-   npm run install:all     # server + client + worker
-   ```
-
-3. **Configure environment variables**
-
-   ```bash
-   cp server/.env.example server/.env
-   ```
-
-   Edit `server/.env`:
-
-   ```ini
-   # --- Core ---
-   PORT=4000
-   MONGO_URI=mongodb://127.0.0.1:27017/vexforge_hq
-   JWT_SECRET=change_this_to_a_long_random_string
-   CLIENT_ORIGIN=http://localhost:5173
-
-   # CEO login (single admin account — you)
-   CEO_EMAIL=you@vexforge.dev
-   CEO_PASSWORD=change_this_password
-   CEO_NAME=Your Name
-
-   # --- Local models (Ollama) — no paid API key ---
-   OLLAMA_URL=http://localhost:11434
-   OLLAMA_MODEL_REASONING=qwen2.5:14b-instruct
-   OLLAMA_MODEL_DRAFTING=qwen2.5:7b-instruct
-   OLLAMA_MODEL_FAST=qwen2.5:3b-instruct
-   # On a smaller machine, collapse all three roles onto one model instead:
-   # OLLAMA_MODEL_ALL=qwen2.5:7b-instruct
-
-   # --- Lead pipeline ---
-   DAILY_SEND_CAP=25              # hard ceiling on automated cold emails per day
-   PIPELINE_PER_SOURCE=12         # companies pulled from each source per run
-   PIPELINE_AUTO_DRAFT_TOP=5      # how many top leads get a draft queued (never sent)
-   PIPELINE_MIN_DRAFT_SCORE=60    # score floor before the pipeline will draft at all
-   PIPELINE_SCHEDULE_ENABLED=false # run the pipeline daily; off by default
-
-   # --- Email outreach (nodemailer) ---
-   # Only used when YOU click "Send" on an approved draft — nothing sends automatically.
-   SMTP_HOST=smtp.gmail.com
-   SMTP_PORT=465
-   SMTP_USER=
-   SMTP_PASS=
-   SMTP_FROM_NAME=VexForge
-   SMTP_FROM_EMAIL=
-
-   # --- Optional: call transcription (OpenAI Whisper-compatible endpoint) ---
-   # If unset, the Support page still works — you just paste transcripts in manually.
-   TRANSCRIBE_API_KEY=
-   TRANSCRIBE_API_URL=https://api.openai.com/v1/audio/transcriptions
-   ```
-
-   Only `MONGO_URI`, `JWT_SECRET`, and `CEO_EMAIL`/`CEO_PASSWORD` are required to run the app at all.
-   Ollama is required for the chatbot, AI drafting and model-assisted scoring specifically — lead
-   discovery, deterministic scoring and the rest of the app all work without it. SMTP and
-   transcription are optional enhancements.
-
-4. **Start MongoDB** (skip if you're using Atlas)
-
-   ```bash
-   # local install
-   mongod --dbpath /path/to/your/data/dir
-
-   # or via Docker
-   docker run -d -p 27017:27017 --name vexforge-mongo mongo:7
-   ```
-
-5. **Run the app** (server on `:4000`, client on `:5173`, concurrently)
-
-   ```bash
-   npm run dev
-   ```
-
-   First boot auto-seeds the org roster into MongoDB from `server/src/services/seed.js`.
-
-6. **Open the app**
-
-   Go to <http://localhost:5173> and sign in with the `CEO_EMAIL` / `CEO_PASSWORD` you set in
-   `server/.env`.
-
-7. **Start the worker** (a second terminal — this is what actually crawls)
-
-   ```bash
-   cp worker/.env.example worker/.env     # set VEXFORGE_API_URL + WORKER_API_KEY
-   npm run worker
-   ```
-
-   `WORKER_API_KEY` must match the one in `server/.env` exactly — the server fails closed with a
-   503 until both sides have it, because an unset key must never mean "anyone may post leads into
-   the CRM". Generate one with:
-
-   ```bash
-   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-   ```
-
-   Without the worker running, the console still works and you can still add leads by hand — but
-   "Start run" just queues a job that nothing picks up, and the Pipeline page will tell you so.
-
-### Running the public marketing site
-
-Open `website/index.html` directly in a browser, or serve it with any static file server:
+#### 1. Clone the Repository
 
 ```bash
-npx serve website
+git clone https://github.com/Tanushh18/VexForge.git
+cd VexForge
 ```
 
-If the API isn't running on `localhost:4000`, set `window.VEXFORGE_API_BASE` in the page before
-the script runs.
-
-### Useful individual scripts
+#### 2. Install Dependencies
 
 ```bash
-# Backend only
-npm run dev --prefix server        # nodemon, auto-restart on changes
-npm start --prefix server          # plain node, no watcher
-npm run seed --prefix server       # re-seed the org roster manually
-
-# Frontend only
-npm run dev --prefix client        # Vite dev server
-npm run build --prefix client      # production build
-npm run preview --prefix client    # preview the production build
+# Install all workspace dependencies (server, client, worker)
+npm run install:all
 ```
 
-### Tests
+This command installs dependencies for:
+- `server/` - Node.js API
+- `client/` - React frontend
+- `worker/` - Local lead discovery worker
+
+#### 3. Configure Environment Variables
+
+**Server Setup** (`.env` in server directory):
 
 ```bash
-npm test                           # both packages
-npm test --prefix server           # API, scoring, worker auth, CORS parsing
-npm test --prefix worker           # discovery source parsing, contact extraction
+cd server
+cp .env.example .env
 ```
 
-Covers the deterministic, non-DB, non-network pieces: CSV parsing, lead-dedupe domain matching, the
-chat intent router's keyword classification, email extraction, the private-IP guard on the scraper,
-the full scoring model (signal detection, band thresholds, and the clamp that stops the model
-promoting a cold lead to hot), each discovery source's title/link parsing, and the lenient JSON
-parser that keeps a chatty model from breaking a scoring run.
+Edit `server/.env` with your settings:
+- `MONGO_URI` - MongoDB connection string (MongoDB Atlas or local)
+- `JWT_SECRET` - Random 32+ character string for JWT signing
+- `CEO_EMAIL` / `CEO_PASSWORD` / `CEO_NAME` - Your admin login
+- `GROQ_API_KEYS` - Comma-separated Groq API keys (from console.groq.com/keys)
+- `SMTP_*` - Gmail SMTP credentials (for outreach)
+- `IMAP_*` - Gmail IMAP credentials (for reply detection, optional)
+- `WORKER_API_KEY` - Shared secret with worker (generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
+- `TELEGRAM_*` - Optional Telegram notifications
+- `CLIENT_ORIGIN` - CORS allowed origins (default: `http://localhost:5173`)
 
-These are exactly the parts most likely to silently regress since nothing else here would catch it
-— everything DB/network-backed is exercised by using the app, not by these tests.
-
-## API overview
-
-All routes are mounted under `/api` on the server (`server/src/index.js`), backed by the route
-files in `server/src/routes/`:
-
-| Route file | Purpose |
-|---|---|
-| `auth.js` | CEO login, JWT issuance |
-| `employees.js` | Org chart / agent roster CRUD, status + currentTask updates |
-| `leads.js` | CRM leads (add, list, update) |
-| `outreach.js` | AI-drafted outreach messages, approval queue, mark-sent |
-| `tickets.js` | Support call/feedback tickets |
-| `activity.js` | Company-wide activity log |
-| `chat.js` | Ember chatbot command endpoint (text + voice transcripts) |
-| `public.js` | Public contact form → CRM lead intake (used by `website/`) |
-| `admin.js` | Playwright deep-scan jobs, local-model health, background-job status |
-| `digest.js` | Latest/recent weekly digests |
-| `pipeline.js` | Lead pipeline — list sources, trigger a run, poll run status, funnel snapshot |
-
-## Using the chatbot (Ember)
-
-Click the chat launcher (bottom-right) or use the mic button to speak a command. Ember runs on a small
-local model (Qwen2.5-3B by default), so read commands are routed **deterministically in Node** (keyword
-matching against your actual data — no free-form tool-picking) and the model is only asked to turn the
-result into a fluent sentence. That trade-off buys reliability at the cost of scope: Ember answers
-questions, it doesn't take actions from chat. Examples that work:
-
-- "Give me a company status update."
-- "What's the Operations team working on?"
-- "List leads that are still new."
-- "Show me the outreach queue awaiting approval."
-- "What happened recently?" *(recent activity log)*
-
-Adding a lead or drafting outreach is done through the CRM/Outreach pages' own forms, not chat — see
-`server/src/services/llmService.js` for the router and the "why" behind that choice. Ember will never
-claim to have sent a LinkedIn message — nothing here can send LinkedIn messages, automated or otherwise.
-
-## Automation & notifications
-
-Background jobs are declared in one place — `src/services/jobRegistry.js` — rather than as loose
-`setInterval` calls. The registry records each job's schedule, last run time and last outcome, and
-`GET /api/admin/jobs` reports it; previously the only way to find out whether a job had ever run
-was to read the server log. **Admin · System** shows the table and has a "Run now" button per job.
-
-| Job | Interval | What it does |
-|---|---|---|
-| Reply check | 5 min | Polls IMAP for unseen mail from a known lead's `contactEmail`; flips that lead + its sent `OutreachMessage` to "responded" |
-| Follow-up check | 6 hr | Queues one follow-up draft per lead quiet for `FOLLOWUP_AFTER_DAYS` since their message was sent |
-| Weekly digest | checked every 12 hr, runs once/week | Summarizes the last 7 days of the activity log via the reasoning model |
-| Lead pipeline | 24 hr, **off by default** | The full discover → enrich → score → draft run. Enable with `PIPELINE_SCHEDULE_ENABLED=true`. |
-
-All are safe to leave unconfigured — `inboxService.imapConfigured()` gates the reply check, the
-pipeline job is opt-in, and the others just find nothing to do without real data. Notifications
-(`notifyService.js`) are the same story: every call is a no-op without
-`TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` set.
-
-To set up Telegram notifications: message [@BotFather](https://t.me/BotFather) on Telegram to create a
-bot and get a token, send your new bot any message once, then fetch
-`https://api.telegram.org/bot<token>/getUpdates` and read the chat id out of the response. Put both in
-`server/.env`.
-
-To set up reply detection: it defaults to your `SMTP_USER`/`SMTP_PASS` (same Gmail account, different
-protocol/port) — set `IMAP_HOST` (and `IMAP_USER`/`IMAP_PASS` only if replies land in a different inbox
-than you send from). A Gmail app password works for both SMTP and IMAP.
-
-## Extending
-
-- **Live calls/telephony**: wire Twilio Voice (or similar) to `POST /api/tickets` on call-end, and
-  optionally pipe recordings through `TRANSCRIBE_API_URL` (already stubbed as an env var) to
-  auto-fill `transcript`.
-- **LinkedIn automation**: if you later set up a compliant tool (official LinkedIn API partnership,
-  or a browser-automation tool you run and own), have it read approved drafts from
-  `GET /api/outreach?status=approved&channel=linkedin` and call `POST /api/outreach/:id/mark-sent`
-  once it actually sends — the queue and data model are already built for that handoff.
-- **More departments/agents**: add entries to the `ORG` array in `server/src/services/seed.js` and
-  restart — the seed upserts by title, so nothing needs wiping. Give each new agent a `modelRole`
-  (`reasoning` / `drafting` / `fast` / `none`).
-- **More lead sources**: add one module to `server/src/services/leadSources/` exporting
-  `{ key, label, needsBrowser, run }` and list it in that folder's `index.js`. It should return
-  partial leads (`companyName`, `website`, `notes`, `sourceUrl`, `signals`) and read public pages
-  only; dedupe, enrichment and scoring are handled for you downstream.
-- **Deploying the pipeline off your laptop**: the server is a plain Node process with a Mongo URI
-  and an Ollama URL, so a small EC2 instance (or any always-on box) runs it unchanged — point
-  `MONGO_URI` at Atlas and `OLLAMA_URL` at wherever the models live. The `reasoning` model is the
-  one that needs real RAM; everything else is comfortable on a modest instance.
-
-## What fits where (memory)
-
-The pieces of this project have wildly different footprints, and only some of them can share a box.
-Measured on this codebase; model figures are Ollama's default Q4_K_M quantization.
-
-| Component | RAM | Where it can live |
-|---|---|---|
-| React console (`client/`) | none at runtime | any static host — it's just files |
-| Marketing site (`website/`) | none at runtime | any static host |
-| Node API, idle | **~140 MB** | a 512MB instance, comfortably |
-| **+ Playwright Chromium** during a run | **+600–730 MB** | needs ~1GB free; this is the spike that decides your plan |
-| MongoDB | not your RAM | Atlas free tier (512MB *storage*) |
-| `qwen2.5:3b-instruct` (`fast`) | ~2 GB | a laptop, easily |
-| `qwen2.5:7b-instruct` (`drafting`) | ~5 GB | 16GB machine, fine |
-| `qwen2.5:14b-instruct` (`reasoning`) | ~9 GB | 16GB machine, tight; 32GB comfortable |
-
-### The trap: Ollama keeps all three models loaded
-
-Ollama holds up to three models resident at once by default and only evicts them after ~5 minutes
-idle. This app uses all three roles, so a single pipeline run touches all three back to back — and
-you can end up with **~16GB of models resident simultaneously**, on top of everything else. On a
-16GB machine that means swapping, and swapping a 9GB model is indistinguishable from a hang.
-
-Two ways out, depending on the machine:
+**Worker Setup** (`.env` in worker directory):
 
 ```bash
-# 32GB+ : leave it — keeping models warm is exactly what you want
-# 16GB  : one model at a time. Slower (a role switch reloads from disk), never swaps.
-OLLAMA_MAX_LOADED_MODELS=1
-
-# <16GB : collapse all three roles onto one model — no reloads, no eviction
-OLLAMA_MODEL_ALL=qwen2.5:7b-instruct
+cd ../worker
+cp .env.example .env
 ```
 
-### Deployable as-is vs. not
+Edit `worker/.env` with your settings:
+- `VEXFORGE_API_URL` - Server URL (local: `http://localhost:4000`)
+- `WORKER_API_KEY` - Must match server's `WORKER_API_KEY`
+- `GROQ_API_KEYS` - Comma-separated Groq API keys (same as server)
+- `WORKER_ID` - Name for this worker (e.g., "desktop", "ci-runner")
 
-- **Deploy anywhere:** both static sites, and the Node API — it's a plain Express process.
-- **Deploy with room to breathe:** the API *including* discovery and deep scans. Budget ~1GB;
-  Chromium is the whole reason.
-- **Don't deploy to a normal cloud instance:** the models. A 14B model on a CPU-only box isn't
-  memory-bound so much as unusably slow — seconds per token. Keep Ollama on hardware you control
-  and point `OLLAMA_URL` at it.
-
-Splitting is a legitimate answer: static sites on a free host, the API on a small instance, and
-Ollama on your own machine behind a tunnel. The router degrades cleanly when the models are
-unreachable, so the split never takes the app down — it just narrows what it can do.
-
-## Rollout phases — what runs where, and when to move
-
-The split isn't local-vs-cloud so much as **workload-vs-uptime**. Two facts drive it:
-
-- The models need RAM and speed, so they stay on hardware you own.
-- Reply detection, follow-ups and the contact form only work if something is always on.
-
-The lever that makes this cheap: **both the local and the deployed API talk to the same Atlas
-database.** So Chromium — the single biggest memory cost — can keep running on your laptop long
-after the rest is deployed, writing into the same CRM. You don't pay for a 2GB instance until you
-actually want discovery running unattended.
-
-### Phase 0 — everything local
-
-| | |
-|---|---|
-| **Local** | MongoDB, Ollama + all 3 models, API, console, marketing site |
-| **Deployed** | nothing |
-| **Settings** | `PIPELINE_SCHEDULE_ENABLED=false` — trigger every run by hand |
+#### 4. Initialize the Database
 
 ```bash
-npm run install:all && npx playwright install chromium
-cp server/.env.example server/.env    # fill in MONGO_URI, JWT_SECRET, CEO_*
+cd server
+npm run seed
+```
+
+This seeding script initializes:
+- CEO admin account
+- Empty lead database
+- Default settings and configuration
+- Sample departments and employees (optional)
+
+#### 5. Start Development Server
+
+In one terminal (API):
+```bash
+cd server
 npm run dev
 ```
 
-The point of this phase is to find out whether the discovery sources actually surface companies
-worth emailing — **before** paying for anything. Watch a full run from the Lead Pipeline page, then
-read the top 10 in the CRM and ask whether you'd genuinely contact them. If Product Hunt's markup
-has shifted or the scoring is mis-ranking, you want to learn that for free.
+In another terminal (React frontend):
+```bash
+cd client
+npm run dev
+```
 
-**Move on when:** a manual run produces leads you'd actually email, and the drafts read like
-something you'd send.
+The API runs on `http://localhost:4000` and the frontend on `http://localhost:5173`.
 
-### Phase 1 — deploy the shopfront, keep the heavy work local
+#### 6. Start the Local Worker (Optional)
 
-| | |
-|---|---|
-| **Local** | Ollama + models, **and the pipeline runs** (Chromium stays on your machine) |
-| **Deployed** | Marketing site, console, API — on a **512MB Starter instance** |
-| **Database** | Atlas, shared by both your laptop and the deployed API |
-| **Settings** | `PIPELINE_SCHEDULE_ENABLED=false` on the deployed instance |
+In a third terminal, run the lead discovery worker:
+```bash
+cd worker
+npm start
+```
 
-Change `plan: standard` to `plan: starter` in `render.yaml` for this phase. 512MB is plenty for
-everything **except** Chromium — and Chromium isn't running there yet, because you're still
-triggering pipeline runs from your laptop against the same Atlas cluster.
+The worker will poll the API every 15 seconds (configurable via `WORKER_POLL_MS`) for jobs.
 
-What the deployed side buys you immediately: the contact form goes live, the CRM is reachable from
-your phone, and IMAP reply detection runs around the clock — that one needs no model at all, so it
-works whether or not your laptop is on.
+### MongoDB Setup
 
-What still needs your machine awake: drafting, the chatbot, follow-up generation and the weekly
-digest, since all four need Ollama. Point `OLLAMA_URL` at your desktop through a Cloudflare tunnel
-and they work whenever it's up.
+#### Option A: MongoDB Atlas (Recommended for Render)
 
-**Move on when:** you're tired of remembering to trigger runs manually.
+1. Go to [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
+2. Create a free tier cluster in a region close to your deployment
+3. Allowlist Render's outbound IPs or use `0.0.0.0/0` (username/password-based)
+4. Generate a connection string: `mongodb+srv://user:password@cluster.mongodb.net/vexforge_hq`
+5. Copy this to `server/.env` as `MONGO_URI`
 
-### Phase 2 — hand discovery to the cloud
+#### Option B: Local MongoDB
 
-| | |
-|---|---|
-| **Local** | Ollama + models only (tunnelled) |
-| **Deployed** | Everything else, now including discovery |
-| **Settings** | `plan: standard` (2GB, for Chromium) · `PIPELINE_SCHEDULE_ENABLED=true` |
+```bash
+# macOS (via Homebrew)
+brew services start mongodb-community
 
-This is the autonomous configuration: it discovers, enriches, scores and drafts on a 24-hour cycle,
-and you review the approval queue whenever you feel like it.
+# Linux (Ubuntu/Debian)
+sudo systemctl start mongod
 
-**Know this before you flip it.** If the deployed API can't reach Ollama — laptop closed, tunnel
-down — a scheduled run still discovers, dedupes, enriches and scores, because deterministic scoring
-needs no model. But **drafting produces nothing for that batch and nothing retries it later.** Those
-leads sit at `new` with no draft. `POST /api/leads/rescore` catches scoring up; there is no
-equivalent for drafting yet, so today you'd generate those one at a time from the Outreach page.
+# Or Docker
+docker run -d -p 27017:27017 --name mongodb mongo:latest
+```
 
-If your Ollama host isn't reliably on, stay on Phase 1 — a nightly run whose drafts silently go
-missing is worse than one you trigger yourself.
+Then use `mongodb://127.0.0.1:27017/vexforge_hq` as your `MONGO_URI`.
 
-### At a glance
+### Groq API Keys
 
-| Component | Phase 0 | Phase 1 | Phase 2 |
-|---|---|---|---|
-| Marketing site | local | **deployed** | deployed |
-| Console (`client/`) | local | **deployed** | deployed |
-| API | local | **deployed** (512MB) | deployed (2GB) |
-| MongoDB | local | **Atlas** | Atlas |
-| Pipeline / Chromium | local | local | **deployed** |
-| Ollama + models | local | local (tunnelled) | local (tunnelled) |
-| Scheduled runs | off | off | **on** |
+1. Sign up at [console.groq.com](https://console.groq.com)
+2. Navigate to **Keys** and create a free-tier API key
+3. Verify available models under **Settings → Limits**
+4. Add to `server/.env` and `worker/.env` as `GROQ_API_KEYS` (comma-separated for fallback)
 
-## Deploying to Render
+---
 
-`render.yaml` in the repo root is a Blueprint for all three services: the API (Docker, since lead
-discovery drives a real Chromium), the HQ console, and the public marketing site. In Render:
-**New → Blueprint**, point it at this repo, and fill in the variables it asks for.
+## Usage
 
-Two pieces Render can't host, both wired as dashboard-entered variables:
+### Web Dashboard
 
-| Variable | Why it's external |
-|---|---|
-| `MONGO_URI` | Render has no managed MongoDB — use a free [Atlas](https://www.mongodb.com/atlas) cluster. Atlas blocks unknown IPs, so allowlist Render's outbound IPs (Service → Connect → Outbound). |
-| `OLLAMA_URL` | Render's standard instances are CPU-only, and a 14B model on CPU is far too slow to sit in a request path. Point this at a machine you control — your desktop behind a Cloudflare tunnel, or a GPU box. |
+#### Login
 
-**Without Ollama the app still runs.** Discovery, enrichment, dedupe and deterministic scoring all
-keep working; you lose drafting, the chatbot, and the model's ±15 scoring adjustment. **Admin ·
-System** shows which roles actually resolved, so you can tell "not running" from "not pulled".
+1. Navigate to `http://localhost:5173` (or deployed URL)
+2. Log in with your CEO credentials (from `.env`)
+3. First login shows onboarding
 
-Three things worth knowing before you click deploy:
+#### Lead Pipeline Page
 
-- **The API is on Starter, not Free, deliberately.** Free instances spin down when idle, and a
-  spun-down instance runs no background jobs — no reply checking, no follow-up drafting, no
-  scheduled pipeline. A lead-gen system that only works while a tab is open isn't one.
-- **One manual step.** Both static sites proxy `/api/*` to the API by absolute URL, and Render only
-  knows that URL once the API exists. If your API lands on a hostname other than
-  `vexforge-api.onrender.com`, update the three `destination:` lines in `render.yaml` and redeploy
-  the static sites.
-- **`PIPELINE_SCHEDULE_ENABLED` ships as `false`.** Watch one manual run from the Lead Pipeline page
-  first, then flip it in the dashboard.
+1. Click **Lead Pipeline** in sidebar
+2. Click **Start run** to queue a job
+3. Monitor live progress (discover → enrich → score → draft)
+4. View discovered leads and their scores
+5. Auto-drafted messages appear in the **Outreach Queue**
 
-`autoDeploy` is off for all three services — push doesn't redeploy until you say so.
+**Choosing specific sources**: Check boxes for exact sources to run; otherwise, the next 8 sources in rotation are used.
 
-## Security notes
+#### Outreach Queue
 
-- `server/.env` is git-ignored — never commit real credentials. Only `server/.env.example`
-  (with placeholder values) is tracked.
-- `JWT_SECRET` and `CEO_PASSWORD` should be long, random values in any real deployment — required, not
-  optional, the moment this is reachable from outside your own machine (e.g. behind a tunnel).
-- The contact scraper only reads a company's own public pages — it does not touch LinkedIn or any
-  authenticated/private source. The discovery adapters read public listing pages only and never take
-  contact details from them.
-- The pipeline cannot send. It stops at `draft`, and the only transmit path
-  (`POST /api/outreach/:id/send-email`) requires an approved draft and passes the daily cap first.
-- Both scraper tiers refuse to scan a domain that resolves to a private/loopback/link-local address
-  (`assertPublicHost` in `scraperService.js`) — the Playwright tier drives a full browser, which is a much
-  bigger blast radius than a plain GET if pointed at something internal.
-- `VexForge-LocalLLM`'s API has no auth — only run it on a private network, or behind a tunnel URL you
-  don't share.
-- Rate limiting (`express-rate-limit`) is on: a general ceiling on `/api/*` and a much tighter one on
-  `/api/auth/login` specifically, since that's the credential-guessing target now that this can be
-  reachable over a public tunnel.
+1. Click **Outreach** in sidebar
+2. Review drafted messages
+3. Click **Approve** to move to approval queue
+4. Click **Send** to deliver via SMTP (counts against `DAILY_SEND_CAP`)
+5. Track delivery status and replies
+
+#### CRM / Leads
+
+1. Click **Leads** or **Companies** in sidebar
+2. Search by company name, website, or email
+3. View full lead details (contact, company, score, outreach history)
+4. Edit leads manually or mark as "Do Not Email"
+
+#### Org Chart
+
+1. Click **Office** in sidebar
+2. View live organization chart (Operations, HR, Tech, Finance, Support)
+3. Add/edit employees and their roles
+
+#### Tickets
+
+1. Click **Support** in sidebar
+2. Create or view support tickets
+3. Track call feedback and follow-ups
+
+#### Chat (Ember)
+
+1. Click **Chat** in sidebar
+2. Ask Ember (Head Manager) questions in plain English
+3. Ember pulls from lead data, activity logs, and company state
+4. (Optional) Use voice input for hands-free commands
+
+#### Activity Log
+
+1. Click **Settings → System → Activity Log**
+2. View complete audit trail (who, what, when)
+
+#### Daily Digest
+
+1. Manual: Click **Settings → Digest → Generate Now**
+2. Auto: Scheduled daily (configurable in code)
+3. Includes pipeline summary, responses, activity highlights
+
+### Local Worker
+
+#### Manual Run
+
+```bash
+cd worker
+npm start
+```
+
+Worker polls the server every `WORKER_POLL_MS` (default 15s) and:
+1. Claims a pending job
+2. Runs discovery (20 sources or rotation subset)
+3. Enriches contacts
+4. Scores leads
+5. Drafts outreach
+6. Posts results to `/api/pipeline/deliver`
+7. Reports progress every 5-10 seconds
+
+#### One-Time Run (Local)
+
+```bash
+npm run once
+```
+
+Runs a single pipeline execution and exits.
+
+#### Source Diagnostics
+
+```bash
+npm run diagnose
+```
+
+Tests all 20 discovery sources without posting to API (debugging & validation).
+
+### GitHub Actions Workflow
+
+#### Automated Scheduled Runs
+
+1. Push `worker/.env` secrets to GitHub:
+   - `VEXFORGE_API_URL` (your deployed API URL)
+   - `WORKER_API_KEY` (must match server)
+   - `GROQ_API_KEYS` (Groq API keys)
+
+2. `.github/workflows/pipeline.yml` runs on daily cron (default 8 AM UTC) or manual trigger
+3. Actions runner claims a job, runs the pipeline, delivers leads
+4. Console shows **"Worker: GitHub Actions"** when online
+
+#### Source Diagnostics Workflow
+
+`.github/workflows/diagnose-sources.yml` tests all 20 sources with no secrets (safe to run anytime).
+
+---
+
+## Configuration
+
+### Server Environment Variables
+
+See `server/.env.example` for full reference. Key settings:
+
+#### Core
+- `PORT` - API port (default 4000)
+- `MONGO_URI` - MongoDB connection string
+- `JWT_SECRET` - Session signing secret
+- `CLIENT_ORIGIN` - CORS allowed origins
+
+#### Admin
+- `CEO_EMAIL` / `CEO_PASSWORD` / `CEO_NAME` - Initial admin account
+
+#### Models
+- `GROQ_API_KEYS` - Hosted LLM API keys (comma-separated)
+- `GROQ_MODEL_REASONING` - Lead scoring, fit assessment (default: openai/gpt-oss-120b)
+- `GROQ_MODEL_DRAFTING` - Outreach copy generation (default: openai/gpt-oss-20b)
+- `GROQ_MODEL_FAST` - Classification, summaries (default: openai/gpt-oss-20b)
+
+#### Email Outreach
+- `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` - Gmail SMTP
+- `SMTP_FROM_NAME` / `SMTP_FROM_EMAIL` - Sender identity
+
+#### Reply Detection
+- `IMAP_HOST` / `IMAP_PORT` / `IMAP_USER` / `IMAP_PASS` - Gmail IMAP (optional)
+- Defaults to SMTP credentials if unset
+
+#### Notifications
+- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` - Telegram push notifications
+
+#### Lead Pipeline
+- `DAILY_SEND_CAP` - Max emails per day (default 25)
+- `PIPELINE_PER_SOURCE` - Leads per source (default 12)
+- `PIPELINE_ROTATION_BATCH_SIZE` - Sources per rotation run (default 8)
+- `PIPELINE_AUTO_DRAFT_TOP` - Auto-draft top N leads (default 5)
+- `PIPELINE_MIN_DRAFT_SCORE` - Minimum score to draft (default 60)
+- `PIPELINE_SCHEDULE_ENABLED` - Auto-run on schedule (default false)
+- `PIPELINE_EVERY_HOURS` - Schedule interval (default 24)
+
+#### Worker
+- `WORKER_API_KEY` - Shared secret with worker
+- `WORKER_STALE_AFTER_MS` - Time before marking worker offline (default 45s)
+
+#### GitHub Actions Integration
+- `GITHUB_TRIGGER_TOKEN` - Fine-grained PAT for GitHub Actions (optional)
+- `GITHUB_TRIGGER_OWNER` / `GITHUB_TRIGGER_REPO` - GitHub repo coordinates
+- `GITHUB_TRIGGER_WORKFLOW` - Workflow file name (default pipeline.yml)
+
+### Worker Environment Variables
+
+See `worker/.env.example` for full reference:
+
+- `VEXFORGE_API_URL` - API endpoint (local: `http://localhost:4000`)
+- `WORKER_API_KEY` - Shared secret (must match server)
+- `WORKER_ID` - Display name in console
+- `WORKER_POLL_MS` - Job poll interval (default 15000ms)
+- `GROQ_API_KEYS` - Hosted LLM API keys
+
+### Shared Configuration
+
+`shared/scoring.js` defines:
+- Signal weights for lead scoring
+- Base score (30)
+- Signal definitions (funding, headcount, integration, etc.)
+
+Edit this file to adjust scoring logic. See scoring comments for weights and reasoning.
+
+---
+
+## Dependencies
+
+### Core Dependencies
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| **Server** | | |
+| express | ^4.21.2 | HTTP API framework |
+| mongoose | ^8.9.5 | MongoDB ODM |
+| axios | ^1.7.9 | HTTP client |
+| jsonwebtoken | ^9.0.2 | JWT authentication |
+| bcryptjs | ^2.4.3 | Password hashing |
+| nodemailer | ^9.0.5 | SMTP email sending |
+| imapflow | ^1.0.171 | IMAP reply detection |
+| mailparser | ^3.7.2 | Email parsing |
+| cheerio | ^1.0.0 | HTML parsing |
+| dotenv | ^16.4.7 | Environment loading |
+| cors | ^2.8.5 | CORS middleware |
+| morgan | ^1.10.0 | Request logging |
+| express-rate-limit | ^7.4.1 | Rate limiting |
+| **Client** | | |
+| react | ^18.3.1 | UI framework |
+| react-router-dom | ^7.18.2 | Routing |
+| vite | ^6.0.7 | Build tool & dev server |
+| **Worker** | | |
+| playwright | ^1.48.2 | Browser automation |
+| cheerio | ^1.0.0 | HTML parsing |
+| axios | ^1.7.9 | HTTP client |
+| dotenv | ^16.4.7 | Environment loading |
+
+### Optional Dependencies
+
+- `openai` (Whisper API) - Transcription
+- `node-telegram-bot-api` - Telegram notifications
+
+---
+
+## Contribution Guide
+
+### Getting Started
+
+1. Fork the repository on GitHub
+2. Clone your fork locally
+3. Create a feature branch: `git checkout -b feature/your-feature`
+4. Follow the setup instructions under [Installation](#installation)
+
+### Development Workflow
+
+1. **Make changes** in your branch
+2. **Test locally**:
+   ```bash
+   npm test                           # Run all tests
+   npm test --prefix server          # Server tests only
+   npm test --prefix worker          # Worker tests only
+   ```
+3. **Commit** with descriptive messages:
+   ```bash
+   git commit -m "feat: add new scoring signal"
+   git commit -m "fix: resolve reply detection race condition"
+   git commit -m "docs: update README with Render deployment steps"
+   ```
+4. **Push** to your fork
+5. **Open a Pull Request** against `main` with:
+   - Clear description of changes
+   - Reference to related issues
+   - Test results (automated checks + manual testing)
+
+### Code Standards
+
+#### JavaScript/Node.js
+- Use ES6+ syntax (const, arrow functions, template literals)
+- Async/await for asynchronous operations
+- Meaningful variable/function names
+- Comments for complex logic
+- No console.log in production (use logging middleware)
+
+#### React
+- Functional components with hooks
+- Props validation (optional but recommended)
+- Meaningful component names
+- Separate concerns (components, hooks, services)
+
+#### Git Commits
+- Use conventional commit format: `type(scope): message`
+  - `feat:` new feature
+  - `fix:` bug fix
+  - `docs:` documentation changes
+  - `refactor:` code restructuring
+  - `test:` test additions/updates
+  - `chore:` dependency or config updates
+
+### Architecture Guidelines
+
+#### Two-Process Design
+
+- **Worker** (local/GitHub Actions): Handles Playwright discovery, enrichment, scoring, drafting
+- **Server** (deployed): Handles CRM, approvals, sending, replies, chat
+- **Shared** (server + worker): Model routing, scoring engine, outreach prompts
+
+Rationale: Playwright/Chromium requires ~730MB; keeping it off the deployed server keeps costs low.
+
+#### Adding a Discovery Source
+
+1. Create new file in `worker/src/leadSources/`
+2. Export async function returning `[{name, website, timing_signals?}]`
+3. Add entry to `worker/src/leadSources/directorySites.js` or implement custom harvester
+4. Wrap with `safeSource()` to isolate failures
+5. Test with `npm run diagnose`
+
+#### Modifying Scoring
+
+1. Edit `shared/scoring.js`
+2. Add/modify signal definitions and weights
+3. Update comments explaining the signal
+4. Test on sample leads
+5. Document weight changes in commit message
+
+#### Adding a CRM Feature
+
+1. Create MongoDB model in `server/src/models/`
+2. Create route handler in `server/src/routes/`
+3. Add React component in `client/src/pages/` or `components/`
+4. Hook up API calls in `client/src/services/`
+5. Test full flow (create, read, update, delete)
+
+### Testing
+
+#### Server Tests
+```bash
+cd server
+npm test                        # Run all tests
+node --test test/specific.test.js   # Run specific test
+```
+
+#### Worker Tests
+```bash
+cd worker
+npm test
+```
+
+#### Manual Testing Checklist
+
+- [ ] Local dev setup runs without errors
+- [ ] Can log in with CEO credentials
+- [ ] Can start a manual pipeline run
+- [ ] Worker picks up job and reports progress
+- [ ] Leads appear in CRM after run completes
+- [ ] Can approve and send an outreach message
+- [ ] Reply detection works (if IMAP configured)
+- [ ] Org chart loads and displays correctly
+- [ ] Chat/Ember responds to queries
+- [ ] Activity log records all actions
+
+### Reporting Issues
+
+When opening an issue, include:
+- **Description**: What is the problem?
+- **Steps to reproduce**: How to trigger the issue?
+- **Expected behavior**: What should happen?
+- **Actual behavior**: What happened instead?
+- **Environment**: Node version, OS, MongoDB setup, etc.
+- **Logs**: Any error messages or stack traces
+
+### Documentation
+
+- Update README.md when adding features or changing setup steps
+- Document new environment variables in `.env.example`
+- Add JSDoc comments to exported functions
+- Update this guide for new architectural decisions
+
+### Deployment
+
+Deployment to Render is configured via `render.yaml`:
+
+1. **API (vexforge-api)**: Docker container with Node.js + Express
+2. **Console (vexforge-console)**: Static React build
+3. **Website (vexforge-site)**: Static marketing site
+
+To deploy:
+1. Push to `main` branch (configure auto-deploy in Render dashboard)
+2. Or manually trigger: `git push render main`
+3. Monitor builds in Render dashboard
+
+See `render.yaml` comments for configuration details.
+
+---
+
+## Quick Reference
+
+### Common Commands
+
+```bash
+# Development
+npm run dev                     # Start server + client
+npm run worker                  # Start worker
+npm run install:all            # Install all dependencies
+
+# Testing
+npm test                        # Run all tests
+npm test --prefix server       # Server tests
+npm test --prefix worker       # Worker tests
+
+# Database
+cd server && npm run seed      # Initialize database
+
+# Deployment
+git push render main            # Push to Render (if configured)
+```
+
+### Key Files
+
+- **Server entry**: `server/src/index.js`
+- **Routes**: `server/src/routes/*.js`
+- **Models**: `server/src/models/*.js`
+- **Scoring logic**: `shared/scoring.js`
+- **Model routing**: `shared/modelRouter.js`
+- **Worker loop**: `worker/src/index.js`
+- **Client entry**: `client/src/main.jsx`
+- **Styles**: `client/src/styles.css`
+
+### Support
+
+- **Issues**: GitHub Issues (include logs, reproduction steps)
+- **Discussions**: GitHub Discussions for questions
+- **Docs**: See `worker/README.md` for worker-specific docs
+
+---
+
+## License
+
+See LICENSE file (if present) or contact the repository owner.
+
+---
+
+**Last Updated**: September 2026
+**Maintainer**: Tanushh18
