@@ -1,41 +1,40 @@
-// Where the VexForge API lives. The address is kept on Stashr (project "vexforge" Server URLs), so moving the API needs
-// no rebuild. If Stashr has no entry or cannot be reached, the old behaviour stays: VITE_API_BASE_URL, else the
-// same-origin "/api" that the host proxies.
-const REGISTRY_HOSTS = ["https://password-manager-server-xxdr.onrender.com", "https://password-manager-server-8gvj.onrender.com"];
+// Where the VexForge API lives. Stashr is the ONLY source (project "vexforge" Server URLs): there is no env value, no
+// same-origin proxy and no fallback address. Switched off or never reached means the console reaches no server (the
+// last answer Stashr gave is kept for next time). `npm run dev` still uses Vite's local /api proxy.
+const REGISTRY_HOST = "https://password-manager-server-xxdr.onrender.com";
 const APP = "vexforge";
 const CACHE_KEY = "stashr.server." + APP;
+// Used as the address when Stashr has none: every request then fails at once.
+export const NO_SERVER = "https://stashr-no-server.invalid";
 const strip = (url) => String(url || "").trim().replace(/\/+$/, "").replace(/\/api$/, "");
-const FALLBACK = strip(import.meta.env.VITE_API_BASE_URL);
 
-const readCache = () => { try { return strip(localStorage.getItem(CACHE_KEY)); } catch { return ""; } };
-const writeCache = (url) => { try { localStorage.setItem(CACHE_KEY, url); } catch { /* private mode */ } };
+const readCache = () => { try { const v = JSON.parse(localStorage.getItem(CACHE_KEY)); return v && typeof v.url === "string" ? v : null; } catch { return null; } };
+const writeCache = (url) => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ url })); } catch { /* private mode */ } };
 
+/** Stashr's answer: { url } (empty = switched off), or null when Stashr cannot be reached. */
 async function fromStashr(timeoutMs) {
-  for (const host of REGISTRY_HOSTS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(`${host}/registry/${APP}`, { signal: controller.signal });
-      if (!res.ok) continue;
-      const url = strip(((await res.json()).urls || [])[0]);
-      if (/^https?:\/\//i.test(url)) return url;
-    } catch { /* try the next Stashr server */ }
-    finally { clearTimeout(timer); }
-  }
-  return "";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${REGISTRY_HOST}/registry/${APP}`, { signal: controller.signal });
+    if (!res.ok) return null;
+    const url = strip(((await res.json()).urls || [])[0]);
+    return { url: /^https?:\/\//i.test(url) ? url : "" };
+  } catch { return null; } finally { clearTimeout(timer); }
 }
 
 let pending = null;
 
-/** The API origin to call ("" means same origin). Instant after the first visit; refreshed in the background. */
+/** The API origin to call. Instant after the first visit (refreshed in the background). */
 export function apiOrigin() {
+  if (import.meta.env.DEV) return Promise.resolve("");
   if (!pending) {
     const cached = readCache();
     if (cached) {
-      pending = Promise.resolve(cached);
-      fromStashr(60000).then((url) => { if (url) writeCache(url); });
+      pending = Promise.resolve(cached.url || NO_SERVER);
+      fromStashr(60000).then((answer) => { if (answer) writeCache(answer.url); });
     } else {
-      pending = fromStashr(6000).then((url) => { if (url) writeCache(url); return url || FALLBACK; });
+      pending = fromStashr(30000).then((answer) => { if (answer) writeCache(answer.url); return answer && answer.url ? answer.url : NO_SERVER; });
     }
   }
   return pending;

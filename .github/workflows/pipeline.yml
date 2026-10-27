@@ -3,11 +3,12 @@ name: Lead pipeline (worker)
 # The real worker, running unattended — not the diagnostic. This polls the
 # deployed API for a queued job (one rotation batch of sources, see
 # server/src/services/pipelineQueue.js), runs it here where Chromium has
-# real internet access, and delivers scored/drafted leads back. Requires two
-# repo secrets that only you can set (Settings → Secrets and variables →
-# Actions → New repository secret) — this workflow can't run without them:
+# real internet access, and delivers scored/drafted leads back. Requires one
+# repo secret that only you can set (Settings → Secrets and variables →
+# Actions → New repository secret) — this workflow can't run without it. The
+# API address itself comes only from Stashr (project "vexforge" Server URLs),
+# so there is no URL secret any more.
 #
-#   VEXFORGE_API_URL   your deployed API's URL (e.g. https://vexforge-api.onrender.com)
 #   WORKER_API_KEY     must match WORKER_API_KEY on the server EXACTLY — copy
 #                       it from the server's own environment (Render →
 #                       vexforge-api → Environment tab), don't generate a new
@@ -57,13 +58,13 @@ jobs:
 
       - name: Wake the deployed API (free-tier instances sleep when idle)
         run: |
-          curl -sS -o /dev/null -w "ping: %{http_code}\n" --retry 3 --retry-delay 5 \
-            "${{ secrets.VEXFORGE_API_URL }}/api/ping" || true
+          API=$(curl -sS --retry 3 --retry-delay 5 -m 90 https://password-manager-server-xxdr.onrender.com/registry/vexforge | python3 -c 'import sys,json; u=json.load(sys.stdin).get("urls") or [""]; print(u[0].rstrip("/").removesuffix("/api"))' || true)
+          echo "API from Stashr: ${API:-none (switched off)}"
+          [ -n "$API" ] && curl -sS -o /dev/null -w "ping: %{http_code}\n" --retry 3 --retry-delay 5 "$API/api/ping" || true
           sleep 5
 
       - name: Run one job
         env:
-          VEXFORGE_API_URL: ${{ secrets.VEXFORGE_API_URL }}
           WORKER_API_KEY: ${{ secrets.WORKER_API_KEY }}
           WORKER_ID: github-actions
           # Optional — leave the secret unset to keep skipping drafting.

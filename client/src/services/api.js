@@ -9,7 +9,7 @@
 // read env vars from, so changing it means rebuilding, not just restarting.
 // On Render, set it on the static site and trigger a redeploy.
 //
-// The address is now looked up on Stashr first (see serverRegistry.js); the two settings above are the fallback.
+// The address now comes only from Stashr (see serverRegistry.js); the two settings above no longer apply.
 import { apiOrigin } from "./serverRegistry";
 
 function authHeaders() {

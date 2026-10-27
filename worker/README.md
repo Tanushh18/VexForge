@@ -61,7 +61,7 @@ Two things must be set:
 
 | | |
 |---|---|
-| `VEXFORGE_API_URL` | your deployed API (or `http://localhost:4000` while testing) |
+| _(API address)_ | comes only from Stashr (project "vexforge" Server URLs); nothing to set |
 | `WORKER_API_KEY` | must match `WORKER_API_KEY` on the server, exactly |
 
 Generate the key once and paste the same value both places:

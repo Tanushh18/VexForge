@@ -43,7 +43,7 @@ async function loop() {
   // out GROQ_API_KEYS was never set.
   await refreshModelHealth();
   const models = modelStatus();
-  console.log(`[worker] ${config.workerId} → ${config.apiUrl}`);
+  console.log(`[worker] ${config.workerId} (server address comes from Stashr)`);
   console.log(
     models.backend
       ? `[worker] models via ${models.backend} (${models.keyCount} key(s)): ${models.roles.map((r) => `${r.role}→${r.model}`).join(", ")}`

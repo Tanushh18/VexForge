@@ -4,11 +4,10 @@ import axios from "axios";
 // key rather than the CEO login — it runs unattended on a machine that
 // shouldn't hold your password, and a key can be rotated independently.
 
-const API_URL = (process.env.VEXFORGE_API_URL || "http://localhost:4000").replace(/\/+$/, "");
 const WORKER_API_KEY = process.env.WORKER_API_KEY || "";
 const WORKER_ID = process.env.WORKER_ID || `worker-${process.pid}`;
 
-export const config = { apiUrl: API_URL, workerId: WORKER_ID };
+export const config = { workerId: WORKER_ID };
 
 // Checked here rather than exiting at import time: a process.exit() as a
 // module-load side effect means anything that imports this module — a test,
@@ -21,25 +20,24 @@ export function assertConfigured() {
   }
 }
 
-// The API address is kept on Stashr (project "vexforge" Server URLs), so moving the API needs no worker restart with a
-// new env. VEXFORGE_API_URL above is the fallback when Stashr has no entry or cannot be reached.
-const REGISTRY_HOSTS = ["https://password-manager-server-xxdr.onrender.com", "https://password-manager-server-8gvj.onrender.com"];
-let stashr = { url: "", at: 0 };
+// The API address comes only from Stashr (project "vexforge" Server URLs): no VEXFORGE_API_URL, no fallback. Switched
+// off or never reached means calls fail at once, and the last answer Stashr gave is kept while it is unreachable.
+const NO_SERVER = "https://stashr-no-server.invalid";
+let stashr = { url: "", at: 0, known: false };
 async function currentApiUrl() {
-  if (stashr.url && Date.now() - stashr.at < 5 * 60 * 1000) return stashr.url;
-  for (const host of REGISTRY_HOSTS) {
-    try {
-      const res = await fetch(`${host}/registry/vexforge`, { signal: AbortSignal.timeout(15000) });
-      if (!res.ok) continue;
+  if (stashr.known && Date.now() - stashr.at < 5 * 60 * 1000) return stashr.url || NO_SERVER;
+  try {
+    const res = await fetch("https://password-manager-server-xxdr.onrender.com/registry/vexforge", { signal: AbortSignal.timeout(30000) });
+    if (res.ok) {
       const url = String(((await res.json()).urls || [])[0] || "").trim().replace(/\/+$/, "").replace(/\/api$/, "");
-      if (/^https?:\/\//i.test(url)) { stashr = { url, at: Date.now() }; return url; }
-    } catch { /* try the next Stashr server */ }
-  }
-  return stashr.url || API_URL;
+      stashr = { url: /^https?:\/\//i.test(url) ? url : "", at: Date.now(), known: true };
+    }
+  } catch { /* keep the last answer */ }
+  return stashr.url || NO_SERVER;
 }
 
 const http = axios.create({
-  baseURL: `${API_URL}/api/pipeline`,
+  baseURL: `${NO_SERVER}/api/pipeline`,
   timeout: 30000,
   headers: { "x-worker-key": WORKER_API_KEY, "x-worker-id": WORKER_ID },
 });

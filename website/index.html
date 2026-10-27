@@ -448,28 +448,26 @@ h1{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-.025em
 // form at an API (a tunnel to your machine, an API domain, or "" for same
 // origin when the host proxies /api). Without it: localhost in dev, same origin
 // everywhere else.
-const FALLBACK_BASE =
-  window.VEXFORGE_API_BASE ?? (location.hostname === "localhost" ? "http://localhost:4000" : "");
-
-// The API address is kept on Stashr (project "vexforge"), so moving the API needs no redeploy of this page.
-// FALLBACK_BASE above is used when Stashr has no entry or cannot be reached.
+// The API address comes only from Stashr (project "vexforge" Server URLs): no config.js value, no same-origin proxy,
+// no fallback. Switched off or never reached means the form reaches no server.
+const NO_SERVER = "https://stashr-no-server.invalid";
 async function apiBase() {
   const key = "stashr.server.vexforge";
-  const clean = (u) => String(u || "").trim().replace(/\/+$/, "").replace(/\/api$/, "");
-  try { const saved = clean(localStorage.getItem(key)); if (saved) { refreshStashr(key); return saved; } } catch (e) { /* private mode */ }
-  return (await fromStashr(key, 6000)) || FALLBACK_BASE;
-}
-function refreshStashr(key) { fromStashr(key, 60000); }
-async function fromStashr(key, ms) {
-  for (const host of ["https://password-manager-server-xxdr.onrender.com", "https://password-manager-server-8gvj.onrender.com"]) {
+  const strip = (u) => String(u || "").trim().replace(/\/+$/, "").replace(/\/api$/, "");
+  const ask = async (ms) => {
     try {
-      const res = await fetch(host + "/registry/vexforge", { signal: AbortSignal.timeout(ms) });
-      if (!res.ok) continue;
-      const url = String(((await res.json()).urls || [])[0] || "").trim().replace(/\/+$/, "").replace(/\/api$/, "");
-      if (/^https?:\/\//i.test(url)) { try { localStorage.setItem(key, url); } catch (e) { /* ignore */ } return url; }
-    } catch (e) { /* try the next Stashr server */ }
-  }
-  return "";
+      const res = await fetch("https://password-manager-server-xxdr.onrender.com/registry/vexforge", { signal: AbortSignal.timeout(ms) });
+      if (!res.ok) return null;
+      const url = strip(((await res.json()).urls || [])[0]);
+      const answer = /^https?:\/\//i.test(url) ? url : "";
+      try { localStorage.setItem(key, JSON.stringify({ url: answer })); } catch (e) { /* ignore */ }
+      return answer;
+    } catch (e) { return null; }
+  };
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(key)); } catch (e) { /* none */ }
+  if (saved && typeof saved.url === "string") { ask(60000); return saved.url || NO_SERVER; }
+  return (await ask(30000)) || NO_SERVER;
 }
 
 document.getElementById("contactForm").addEventListener("submit", async (e) => {
