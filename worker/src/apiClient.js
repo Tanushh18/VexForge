@@ -21,11 +21,30 @@ export function assertConfigured() {
   }
 }
 
+// The API address is kept on Stashr (project "vexforge" Server URLs), so moving the API needs no worker restart with a
+// new env. VEXFORGE_API_URL above is the fallback when Stashr has no entry or cannot be reached.
+const REGISTRY_HOSTS = ["https://password-manager-server-xxdr.onrender.com", "https://password-manager-server-8gvj.onrender.com"];
+let stashr = { url: "", at: 0 };
+async function currentApiUrl() {
+  if (stashr.url && Date.now() - stashr.at < 5 * 60 * 1000) return stashr.url;
+  for (const host of REGISTRY_HOSTS) {
+    try {
+      const res = await fetch(`${host}/registry/vexforge`, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) continue;
+      const url = String(((await res.json()).urls || [])[0] || "").trim().replace(/\/+$/, "").replace(/\/api$/, "");
+      if (/^https?:\/\//i.test(url)) { stashr = { url, at: Date.now() }; return url; }
+    } catch { /* try the next Stashr server */ }
+  }
+  return stashr.url || API_URL;
+}
+
 const http = axios.create({
   baseURL: `${API_URL}/api/pipeline`,
   timeout: 30000,
   headers: { "x-worker-key": WORKER_API_KEY, "x-worker-id": WORKER_ID },
 });
+
+http.interceptors.request.use(async (req) => { req.baseURL = `${await currentApiUrl()}/api/pipeline`; return req; });
 
 // The API may be a home tunnel or a spun-down instance, so a failed call is
 // normal rather than exceptional. Callers get a thrown error with a readable

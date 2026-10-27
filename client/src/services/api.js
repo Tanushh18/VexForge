@@ -8,8 +8,9 @@
 // Vite inlines this at BUILD time, not runtime: a static site has no server to
 // read env vars from, so changing it means rebuilding, not just restarting.
 // On Render, set it on the static site and trigger a redeploy.
-const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/+$/, "");
-const BASE = API_ORIGIN ? `${API_ORIGIN}/api` : "/api";
+//
+// The address is now looked up on Stashr first (see serverRegistry.js); the two settings above are the fallback.
+import { apiOrigin } from "./serverRegistry";
 
 function authHeaders() {
   const token = localStorage.getItem("vf_token");
@@ -17,7 +18,8 @@ function authHeaders() {
 }
 
 async function request(path, { method = "GET", body } = {}) {
-  const res = await fetch(`${BASE}${path}`, {
+  const origin = await apiOrigin();
+  const res = await fetch(`${origin ? `${origin}/api` : "/api"}${path}`, {
     method,
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: body ? JSON.stringify(body) : undefined,

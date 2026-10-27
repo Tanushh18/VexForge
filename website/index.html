@@ -448,8 +448,29 @@ h1{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-.025em
 // form at an API (a tunnel to your machine, an API domain, or "" for same
 // origin when the host proxies /api). Without it: localhost in dev, same origin
 // everywhere else.
-const API_BASE =
+const FALLBACK_BASE =
   window.VEXFORGE_API_BASE ?? (location.hostname === "localhost" ? "http://localhost:4000" : "");
+
+// The API address is kept on Stashr (project "vexforge"), so moving the API needs no redeploy of this page.
+// FALLBACK_BASE above is used when Stashr has no entry or cannot be reached.
+async function apiBase() {
+  const key = "stashr.server.vexforge";
+  const clean = (u) => String(u || "").trim().replace(/\/+$/, "").replace(/\/api$/, "");
+  try { const saved = clean(localStorage.getItem(key)); if (saved) { refreshStashr(key); return saved; } } catch (e) { /* private mode */ }
+  return (await fromStashr(key, 6000)) || FALLBACK_BASE;
+}
+function refreshStashr(key) { fromStashr(key, 60000); }
+async function fromStashr(key, ms) {
+  for (const host of ["https://password-manager-server-xxdr.onrender.com", "https://password-manager-server-8gvj.onrender.com"]) {
+    try {
+      const res = await fetch(host + "/registry/vexforge", { signal: AbortSignal.timeout(ms) });
+      if (!res.ok) continue;
+      const url = String(((await res.json()).urls || [])[0] || "").trim().replace(/\/+$/, "").replace(/\/api$/, "");
+      if (/^https?:\/\//i.test(url)) { try { localStorage.setItem(key, url); } catch (e) { /* ignore */ } return url; }
+    } catch (e) { /* try the next Stashr server */ }
+  }
+  return "";
+}
 
 document.getElementById("contactForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -459,7 +480,7 @@ document.getElementById("contactForm").addEventListener("submit", async (e) => {
   status.textContent = "Sending…";
   status.className = "form-status";
   try {
-    const res = await fetch(`${API_BASE}/api/public/contact`, {
+    const res = await fetch(`${await apiBase()}/api/public/contact`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
